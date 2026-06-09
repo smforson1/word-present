@@ -52,7 +52,7 @@ interface TranslationRecord {
 
 interface AppSettings {
   anthropicApiKey: string;
-  openAiApiKey: string;
+  groqApiKey: string;
   selectedTranslation: string;
   fontSizeScale: number;
   theme: string;
@@ -70,6 +70,7 @@ interface Window {
     // Database operations
     queryVerses: (query: VerseQuery) => Promise<VerseResult[]>;
     parseReference: (refStr: string) => Promise<ParsedReference | null>;
+    getAdjacentVerse: (query: { translation: string; book: string; chapter: number; verse: number; direction: 'next' | 'prev' }) => Promise<VerseResult | null>;
 
     // Bible Browser
     getBooks: (translation: string) => Promise<string[]>;
@@ -95,7 +96,7 @@ interface Window {
     setSettings: (key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => Promise<AppSettings>;
     getNetworkInfo: () => Promise<NetworkInfo | null>;
     hasEnvKey: () => Promise<boolean>;
-    hasOpenAiEnvKey: () => Promise<boolean>;
+    hasGroqEnvKey: () => Promise<boolean>;
     initSpeechEngine: () => Promise<boolean>;
     transcribeChunk: (wavBuffer: Uint8Array) => Promise<string>;
     onSpeechInitProgress: (callback: (event: Electron.IpcRendererEvent, data: { status: string; detail?: string }) => void) => () => void;

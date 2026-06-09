@@ -122,7 +122,8 @@ describe('Gap 4 — window.api TypeScript Type Coverage', () => {
       output = e.stdout || '';
       exitCode = e.status ?? 1;
     }
+    const cleanOutput = (output || '').split('\n').filter(line => !line.includes('npm warn') && line.trim()).join('\n');
     expect(exitCode).toBe(0);
-    expect(output).toBe('');
+    expect(cleanOutput).toBe('');
   });
 });

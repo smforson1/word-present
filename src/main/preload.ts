@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('db:query-verses', query),
   parseReference: (refStr: string) => 
     ipcRenderer.invoke('db:parse-reference', refStr),
+  getAdjacentVerse: (query: { translation: string; book: string; chapter: number; verse: number; direction: 'next' | 'prev' }) =>
+    ipcRenderer.invoke('db:get-adjacent-verse', query),
 
   // Bible Browser
   getBooks: (translation: string) => ipcRenderer.invoke('db:get-books', translation),
@@ -31,7 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   setSettings: (key: string, value: any) => ipcRenderer.invoke('settings:set', key, value),
   getNetworkInfo: () => ipcRenderer.invoke('settings:get-network'),
   hasEnvKey: () => ipcRenderer.invoke('settings:has-env-key'),
-  hasOpenAiEnvKey: () => ipcRenderer.invoke('settings:has-openai-env-key'),
+  hasGroqEnvKey: () => ipcRenderer.invoke('settings:has-groq-env-key'),
 
   // Offline Speech Engine
   initSpeechEngine: () => ipcRenderer.invoke('speech:init'),

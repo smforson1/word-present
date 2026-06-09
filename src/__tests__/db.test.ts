@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BibleDatabase } from '../main/db';
+import { formatScripturesInText, detectScriptureReferencesOffline } from '../main/scripture-detector';
 
 // Mock electron path resolution since it's not available in vitest pure-node context
 vi.mock('electron', () => {
@@ -52,6 +53,39 @@ describe('Bible Database Fuzzy Parser and Resolver', () => {
     expect(ref2).toBeNull();
   });
 
+  describe('Offline Scripture Detection & Formatting', () => {
+    it('should format spoken scripture references in text as clean citations', () => {
+      const formatted1 = formatScripturesInText('Genesis chapter one verse one is the beginning');
+      expect(formatted1).toBe('Genesis 1:1 is the beginning');
+
+      const formatted2 = formatScripturesInText('Let us read Genesis chapter 1, verse 1 through 3');
+      expect(formatted2).toBe('Let us read Genesis 1:1-3');
+
+      const formatted3 = formatScripturesInText('John three sixteen is famous');
+      expect(formatted3).toBe('John 3:16 is famous');
+
+      const formatted4 = formatScripturesInText('Saying genesis by itself should do nothing');
+      expect(formatted4).toBe('Saying genesis by itself should do nothing');
+    });
+
+    it('should not detect references without verse numbers to prevent accidental projections', () => {
+      const refsBookOnly = detectScriptureReferencesOffline('Let us look at Genesis');
+      expect(refsBookOnly).toHaveLength(0);
+
+      const refsChapOnly = detectScriptureReferencesOffline('Genesis chapter 1');
+      expect(refsChapOnly).toHaveLength(0);
+
+      const refsChapOnlyDigit = detectScriptureReferencesOffline('Genesis 1');
+      expect(refsChapOnlyDigit).toHaveLength(0);
+
+      const refsWithVerse = detectScriptureReferencesOffline('Genesis chapter 1 verse 1');
+      expect(refsWithVerse).toHaveLength(1);
+      expect(refsWithVerse[0].book).toBe('Genesis');
+      expect(refsWithVerse[0].chapter).toBe(1);
+      expect(refsWithVerse[0].verse).toBe(1);
+    });
+  });
+
   it('should query seeded verses successfully', () => {
     const verses = db.queryVerses({
       translation: 'KJV',
@@ -97,6 +131,50 @@ describe('Bible Database Fuzzy Parser and Resolver', () => {
     it('should return correct verse counts for a chapter', () => {
       const john3Count = db.getVerseCount('KJV', 'John', 3);
       expect(john3Count).toBe(36);
+    });
+  });
+
+  describe('Scripture Navigation (Adjacent Verses)', () => {
+    it('should query the next verse sequentially', () => {
+      const next = db.getAdjacentVerse('KJV', 'John', 3, 16, 'next');
+      expect(next).not.toBeNull();
+      expect(next?.book).toBe('John');
+      expect(next?.chapter).toBe(3);
+      expect(next?.verse).toBe(17);
+    });
+
+    it('should query the previous verse sequentially', () => {
+      const prev = db.getAdjacentVerse('KJV', 'John', 3, 16, 'prev');
+      expect(prev).not.toBeNull();
+      expect(prev?.book).toBe('John');
+      expect(prev?.chapter).toBe(3);
+      expect(prev?.verse).toBe(15);
+    });
+
+    it('should navigate across chapter boundaries', () => {
+      // Last verse of John 3 is verse 36 in KJV
+      const next = db.getAdjacentVerse('KJV', 'John', 3, 36, 'next');
+      expect(next).not.toBeNull();
+      expect(next?.book).toBe('John');
+      expect(next?.chapter).toBe(4);
+      expect(next?.verse).toBe(1);
+    });
+
+    it('should navigate across book boundaries', () => {
+      // Last verse of Matthew is Matthew 28:20
+      const next = db.getAdjacentVerse('KJV', 'Matthew', 28, 20, 'next');
+      expect(next).not.toBeNull();
+      expect(next?.book).toBe('Mark');
+      expect(next?.chapter).toBe(1);
+      expect(next?.verse).toBe(1);
+    });
+
+    it('should return null at the boundaries of the Bible', () => {
+      const prev = db.getAdjacentVerse('KJV', 'Genesis', 1, 1, 'prev');
+      expect(prev).toBeNull();
+
+      const next = db.getAdjacentVerse('KJV', 'Revelation', 22, 21, 'next');
+      expect(next).toBeNull();
     });
   });
 

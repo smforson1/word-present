@@ -92,8 +92,9 @@ const BOOK_MAP: Record<string, string> = {
 };
 
 function resolveBook(raw: string): string | null {
-  const key = raw.toLowerCase().replace(/\s+/g, ' ').trim();
-  return BOOK_MAP[key] ?? null;
+  const key = raw.toLowerCase().replace(/\s+/g, '').trim();
+  const exactKey = Object.keys(BOOK_MAP).find(k => k.replace(/\s+/g, '') === key);
+  return exactKey ? BOOK_MAP[exactKey] : null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -106,21 +107,25 @@ function resolveBook(raw: string): string | null {
 //   "1 corinthians 13 4 through 7"
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Matches numbered book prefix: "1 ", "2 ", "3 "
-const NUM_PREFIX = `(?:(?:1|2|3)\\s+)`;
-// Matches "first/second/third " (already handled by normalizer → but keep as fallback)
-const ORD_PREFIX = `(?:(?:1st|2nd|3rd)\\s+)`;
-// Book name: 1-3 words
-const BOOK_PATTERN = `(?:${NUM_PREFIX}|${ORD_PREFIX})?(?:[A-Za-z]+(?:\\s+of\\s+[A-Za-z]+)?(?:\\s+[A-Za-z]+)?)`;
+const BOOK_NAMES_UNION = Object.keys(BOOK_MAP)
+  .sort((a, b) => b.length - a.length)
+  .map(k => {
+    let p = k.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    p = p.replace(/\s+/g, '\\s+');
+    p = p.replace(/(\d)([a-z])/gi, '$1\\s*$2');
+    return p;
+  })
+  .join('|');
+
+const BOOK_PATTERN = `\\b(?:${BOOK_NAMES_UNION})\\b`;
 
 // Chapter:Verse or Chapter Verse (with optional verse range)
 const CHAP_VERSE_COLON = `(\\d{1,3}):(\\d{1,3})(?:\\s*[-–through]+\\s*(\\d{1,3}))?`;
-const CHAP_VERSE_WORDS = `chapter\\s+(\\d{1,3})(?:\\s+(?:verse|verses)\\s+(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?)?`;
-const CHAP_VERSE_SPACE = `(\\d{1,3})\\s+(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?`;
-const CHAP_ONLY       = `(\\d{1,3})`;
+const CHAP_VERSE_WORDS = `chapter\\s+(\\d{1,3})(?:(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse|verses)\\s*|\\s*[,;]\\s*(?:verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?)?`;
+const CHAP_VERSE_SPACE = `(\\d{1,3})(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse|verses)\\s*|\\s*[,;]\\s*(?:verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?`;
 
 // Full patterns — ordered most-specific to least-specific
-const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' | 'chapter' }> = [
+const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' }> = [
   {
     re: new RegExp(
       `(?:book\\s+of\\s+|turn\\s+to\\s+|open\\s+to\\s+|found\\s+in\\s+|go\\s+to\\s+|in\\s+)?` +
@@ -141,13 +146,6 @@ const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' | 'chapt
       `(${BOOK_PATTERN})\\s+` +
       CHAP_VERSE_SPACE, 'gi'),
     groups: 'space',
-  },
-  {
-    re: new RegExp(
-      `(?:book\\s+of\\s+|turn\\s+to\\s+|open\\s+to\\s+|in\\s+)` +
-      `(${BOOK_PATTERN})\\s+` +
-      CHAP_ONLY, 'gi'),
-    groups: 'chapter',
   },
 ];
 
@@ -191,17 +189,15 @@ function parseMatches(text: string): ParseResult[] {
         chapter = parseInt(match[2], 10);
         verse = match[3] ? parseInt(match[3], 10) : undefined;
         endVerse = match[4] ? parseInt(match[4], 10) : undefined;
-      } else if (groups === 'space') {
+      } else {
         chapter = parseInt(match[2], 10);
         verse = parseInt(match[3], 10);
         endVerse = match[4] ? parseInt(match[4], 10) : undefined;
-      } else {
-        // chapter only
-        chapter = parseInt(match[2], 10);
       }
 
       if (!chapter || chapter > 150) continue;
-      if (verse !== undefined && (verse < 1 || verse > 176)) continue;
+      if (verse === undefined) continue; // Require a verse number to prevent accidental chapter-level projections
+      if (verse < 1 || verse > 176) continue;
 
       results.push({ bookRaw, chapter, verse, endVerse, matchStart: start, matchEnd: end });
       coveredRanges.push([start, end]);
@@ -250,3 +246,32 @@ export function detectScriptureReferencesOffline(text: string): ExtractedReferen
 
   return refs;
 }
+
+/**
+ * Format scripture references in transcript text into clean standard citations.
+ * (e.g., "Genesis chapter 1 verse 1" -> "Genesis 1:1")
+ */
+export function formatScripturesInText(text: string): string {
+  if (!text.trim()) return text;
+
+  const normalized = normalizeSpokenNumbers(text);
+  const matches = parseMatches(normalized);
+
+  if (matches.length === 0) {
+    return text;
+  }
+
+  // Iterate backwards to replace matched ranges in normalized text
+  let result = normalized;
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const m = matches[i];
+    const book = resolveBook(m.bookRaw);
+    if (!book) continue;
+
+    const formattedRef = `${book} ${m.chapter}:${m.verse}${m.endVerse ? '-' + m.endVerse : ''}`;
+    result = result.substring(0, m.matchStart) + formattedRef + result.substring(m.matchEnd);
+  }
+
+  return result;
+}
+

@@ -9,7 +9,7 @@ import { config as loadDotEnv } from 'dotenv';
 
 import { BibleDatabase } from './db';
 import { detectScriptureReferences, mightContainScriptureReference } from './claude';
-import { detectScriptureReferencesOffline } from './scripture-detector';
+import { detectScriptureReferencesOffline, formatScripturesInText } from './scripture-detector';
 import { exportSessionPdf, ExportedVerse } from './pdf-export';
 import { dialog } from 'electron';
 import { downloadOpenSourceTranslation, importLocalFile } from './translation-manager';
@@ -20,7 +20,7 @@ loadDotEnv({ path: join(app.isPackaged ? process.resourcesPath : process.cwd(), 
 // Initialize Config Store
 const store = new Store({
   defaults: {
-    openAiApiKey: '',
+    groqApiKey: '',
     anthropicApiKey: '',
     selectedTranslation: 'KJV',
     fontSizeScale: 1.0,
@@ -318,6 +318,12 @@ function setupIpcHandlers() {
     return db.parseReference(refStr);
   });
 
+  ipcMain.handle('db:get-adjacent-verse', async (_, query) => {
+    await db.ready();
+    return db.getAdjacentVerse(query.translation, query.book, query.chapter, query.verse, query.direction);
+  });
+
+
   // Settings Storage
   ipcMain.handle('settings:get', () => {
     return store.store;
@@ -456,14 +462,14 @@ function setupIpcHandlers() {
     return true;
   });
 
-  // Transcribe one audio chunk (WAV buffer) via OpenAI Whisper API
+  // Transcribe one audio chunk (WAV buffer) via Groq Whisper API
   ipcMain.handle('speech:transcribe-chunk', async (_, wavBuffer: Uint8Array) => {
     console.log(`[transcribe] chunk received: ${wavBuffer?.length ?? 0} bytes`);
     
-    const openAiApiKey = (process.env.OPENAI_API_KEY || store.get('openAiApiKey') || '') as string;
-    if (!openAiApiKey.trim()) {
-      console.warn('[transcribe] OpenAI API key is missing.');
-      return '[Error: Please configure your OpenAI API Key in Settings to transcribe speech]';
+    const groqApiKey = (process.env.GROQ_API_KEY || store.get('groqApiKey') || '') as string;
+    if (!groqApiKey.trim()) {
+      console.warn('[transcribe] Groq API key is missing.');
+      return '[Error: Please configure your Groq API Key in Settings to transcribe speech]';
     }
 
     try {
@@ -472,35 +478,37 @@ function setupIpcHandlers() {
       
       const formData = new FormData();
       formData.append('file', blob, 'audio.webm');
-      formData.append('model', 'whisper-1');
+      formData.append('model', 'whisper-large-v3');
       formData.append('language', 'en');
 
-      const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${openAiApiKey}`
+          'Authorization': `Bearer ${groqApiKey}`
         },
         body: formData
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error('[transcribe] OpenAI API error response:', errText);
+        console.error('[transcribe] Groq API error response:', errText);
         try {
           const parsed = JSON.parse(errText);
           if (parsed?.error?.message) {
-            return `[OpenAI Error: ${parsed.error.message}]`;
+            return `[Groq Error: ${parsed.error.message}]`;
           }
         } catch (e) {
           // Ignore JSON parse error
         }
-        return `[Error from OpenAI API: ${response.statusText}]`;
+        return `[Error from Groq API: ${response.statusText}]`;
       }
 
       const data: any = await response.json();
-      const text = (data?.text ?? '').trim();
+      let text = (data?.text ?? '').trim();
       if (text) {
         console.log(`[transcribe] result: "${text}"`);
+        text = formatScripturesInText(text);
+        console.log(`[transcribe] formatted: "${text}"`);
       }
       return text;
     } catch (e: any) {
@@ -541,7 +549,8 @@ function setupIpcHandlers() {
     const aiMode = store.get('aiMode') as string;
 
     for (const ref of allDetections) {
-      const fullRefStr = `${ref.book} ${ref.chapter}:${ref.verse || 1}${ref.endVerse ? '-' + ref.endVerse : ''}`;
+      if (ref.verse === undefined) continue; // Require a verse number for auto-projection/suggestions
+      const fullRefStr = `${ref.book} ${ref.chapter}:${ref.verse}${ref.endVerse ? '-' + ref.endVerse : ''}`;
 
       // Deduplication: prevent duplicate projection within 8 seconds
       const now = Date.now();
@@ -581,11 +590,13 @@ function setupIpcHandlers() {
 
       if (aiMode === 'auto-project') {
         handleForceProject(projectionData);
-        event.sender.send('ai:log', { type: 'success', message: `Auto-Projected: ${fullRefStr}` });
+        const logMsg = `Auto-Projected: ${fullRefStr}${ref.reason ? ` (${ref.reason})` : ''}`;
+        event.sender.send('ai:log', { type: 'success', message: logMsg });
       } else {
         // Suggest-only mode: send to renderer as a suggestion banner
         event.sender.send('ai:suggestion', projectionData);
-        event.sender.send('ai:log', { type: 'info', message: `Suggestion queued: ${fullRefStr} (awaiting operator approval)` });
+        const logMsg = `Suggestion queued: ${fullRefStr}${ref.reason ? ` (${ref.reason})` : ''} (awaiting operator approval)`;
+        event.sender.send('ai:log', { type: 'info', message: logMsg });
       }
     }
   });
@@ -600,8 +611,8 @@ function setupIpcHandlers() {
     return !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim());
   });
 
-  ipcMain.handle('settings:has-openai-env-key', () => {
-    return !!(process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.trim());
+  ipcMain.handle('settings:has-groq-env-key', () => {
+    return !!(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
   });
 
   // Check what speech recognition capabilities are available in this Electron build

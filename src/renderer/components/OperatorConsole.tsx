@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { 
   Mic, MicOff, Tv, Volume2, 
   Send, Trash2, Moon, Sun, AlertTriangle, CheckCircle, Info, Power,
-  BookOpen, Search as SearchIcon, Upload
+  BookOpen, Search as SearchIcon, Upload, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -69,7 +69,7 @@ function HighlightedTranscript({ text, detectedRefs }: { text: string; detectedR
 export default function OperatorConsole() {
   // Config & Settings State
   const [apiKey, setApiKey] = useState('');
-  const [openAiApiKey, setOpenAiApiKey] = useState('');
+  const [groqApiKey, setGroqApiKey] = useState('');
   const [translation, setTranslation] = useState('KJV');
   const [availableTranslations, setAvailableTranslations] = useState<{translation: string, verseCount: number}[]>([]);
   const [fontSizeScale, setFontSizeScale] = useState(1.0);
@@ -86,7 +86,7 @@ export default function OperatorConsole() {
   const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string } | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [envKeyActive, setEnvKeyActive] = useState(false);
-  const [openAiEnvKeyActive, setOpenAiEnvKeyActive] = useState(false);
+  const [groqEnvKeyActive, setGroqEnvKeyActive] = useState(false);
 
   // Audio & Mic Pipeline State
   const [isRecording, setIsRecording] = useState(false);
@@ -97,6 +97,7 @@ export default function OperatorConsole() {
 
   // Transcription & AI State
   const [transcript, setTranscript] = useState('');
+  const [isFading, setIsFading] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
   const [detectedRefs, setDetectedRefs] = useState<string[]>([]);
   const [speechEngineStatus, setSpeechEngineStatus] = useState<'idle' | 'downloading' | 'loading' | 'ready' | 'error'>('idle');
@@ -130,9 +131,10 @@ export default function OperatorConsole() {
   const audioStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const transcriptDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const rollingWindowRef = useRef<string[]>([]);
   const workerInitDone = useRef(false);
+  const sliceIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const subtitleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -143,7 +145,7 @@ export default function OperatorConsole() {
 
     window.api.getSettings().then((settings: any) => {
       setApiKey(settings.anthropicApiKey || '');
-      setOpenAiApiKey(settings.openAiApiKey || '');
+      setGroqApiKey(settings.groqApiKey || '');
       setTranslation(settings.selectedTranslation || 'KJV');
       setFontSizeScale(settings.fontSizeScale || 1.0);
       setIsDarkMode(settings.theme === 'dark');
@@ -160,7 +162,7 @@ export default function OperatorConsole() {
 
     // Check if API keys are configured via .env (without exposing them to the UI)
     window.api.hasEnvKey().then(setEnvKeyActive);
-    window.api.hasOpenAiEnvKey().then(setOpenAiEnvKeyActive);
+    window.api.hasGroqEnvKey().then(setGroqEnvKeyActive);
 
     // Initialize Whisper speech engine via main process IPC
     let unsubProgress: (() => void) | null = null;
@@ -210,13 +212,22 @@ export default function OperatorConsole() {
       }
     }).catch((err: any) => console.error('[Startup] Failed to fetch network info:', err));
 
-    navigator.mediaDevices.enumerateDevices().then(devices => {
-      const audioDevs = devices.filter(d => d.kind === 'audioinput');
-      setAudioInputDevices(audioDevs);
-      if (audioDevs.length > 0) {
-        setSelectedAudioDevice(audioDevs[0].deviceId);
-      }
-    }).catch((err: any) => console.error('[Startup] Failed to enumerate audio devices:', err));
+    const updateDevices = () => {
+      navigator.mediaDevices.enumerateDevices().then(devices => {
+        const audioDevs = devices.filter(d => d.kind === 'audioinput');
+        setAudioInputDevices(audioDevs);
+        setSelectedAudioDevice(current => {
+          const stillExists = audioDevs.some(d => d.deviceId === current);
+          if (stillExists) return current;
+          return audioDevs.length > 0 ? audioDevs[0].deviceId : '';
+        });
+      }).catch((err: any) => console.error('[Microphone] Failed to enumerate audio devices:', err));
+    };
+
+    updateDevices();
+    if (navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+      navigator.mediaDevices.addEventListener('devicechange', updateDevices);
+    }
 
     const unsubscribeProject = window.api.onProjectUpdate((_, data) => {
       setActiveProjected(data);
@@ -249,8 +260,20 @@ export default function OperatorConsole() {
       unsubscribeDetectedRef();
       if (unsubProgress) unsubProgress();
       stopMicrophone(true);
+      if (navigator.mediaDevices && typeof navigator.mediaDevices.removeEventListener === 'function') {
+        navigator.mediaDevices.removeEventListener('devicechange', updateDevices);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (isRecording && selectedAudioDevice) {
+      console.log('[Microphone] Active device changed, restarting stream...');
+      stopMicrophone();
+      const t = setTimeout(startMicrophone, 300);
+      return () => clearTimeout(t);
+    }
+  }, [selectedAudioDevice]);
 
   const toggleTheme = () => {
     const nextMode = !isDarkMode;
@@ -274,6 +297,12 @@ export default function OperatorConsole() {
       } else if (e.ctrlKey && e.code === 'KeyF') {
         e.preventDefault();
         setMiddleTab('search');
+      } else if (e.code === 'ArrowLeft' && activeProjected) {
+        e.preventDefault();
+        handleAdjacentVerse('prev');
+      } else if (e.code === 'ArrowRight' && activeProjected) {
+        e.preventDefault();
+        handleAdjacentVerse('next');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -330,8 +359,21 @@ export default function OperatorConsole() {
       
       setInterimTranscript('');
       if (text && text.length > 1 && isRecordingRef.current) {
+        if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+        setIsFading(false);
+
         setTranscript(prev => (prev ? prev + ' ' : '') + text);
-        triggerAIDetectionDebounce(text);
+        triggerAIDetection(text);
+
+        // Disappear subtitle after 7 seconds of inactivity (with fade out animation)
+        subtitleTimeoutRef.current = setTimeout(() => {
+          setIsFading(true);
+          setTimeout(() => {
+            setTranscript('');
+            setDetectedRefs([]);
+            setIsFading(false);
+          }, 500); // 500ms fade transition
+        }, 7000);
       }
     } catch (err: any) {
       console.error('[AudioProcessor] Transcription pipeline failed:', err);
@@ -411,9 +453,27 @@ export default function OperatorConsole() {
         }
       };
 
-      // Deliver 4-second audio slices
-      mediaRecorder.start(4000);
-      console.log('[Microphone] MediaRecorder started with 4-second timeslice.');
+      mediaRecorder.onstop = () => {
+        if (isRecordingRef.current && mediaRecorderRef.current) {
+          try {
+            mediaRecorderRef.current.start();
+          } catch (err) {
+            console.error('[Microphone] Failed to restart MediaRecorder:', err);
+          }
+        }
+      };
+
+      // Start recording
+      mediaRecorder.start();
+      console.log('[Microphone] MediaRecorder started.');
+
+      // Periodically stop to flush complete self-contained audio slices
+      const intervalId = setInterval(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+      }, 4000);
+      sliceIntervalRef.current = intervalId;
 
       addAiLog('success', 'Listening — capturing audio directly via MediaRecorder...');
     } catch (err: any) {
@@ -432,6 +492,10 @@ export default function OperatorConsole() {
   const stopMicrophone = (isUnmounting: boolean = false) => {
     console.log(`[Microphone] Stopping stream. Is Unmounting: ${isUnmounting}`);
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    if (sliceIntervalRef.current) {
+      clearInterval(sliceIntervalRef.current);
+      sliceIntervalRef.current = null;
+    }
     
     if (mediaRecorderRef.current) {
       try {
@@ -454,6 +518,10 @@ export default function OperatorConsole() {
     if (!isUnmounting) {
       setVuLevel(0);
       setInterimTranscript('');
+      if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+      setTranscript('');
+      setDetectedRefs([]);
+      setIsFading(false);
     }
   };
 
@@ -469,18 +537,15 @@ export default function OperatorConsole() {
     }
   };
 
-  const triggerAIDetectionDebounce = (newText: string) => {
+  const triggerAIDetection = (newText: string) => {
     // Maintain a rolling window of the last ~40 words for richer context
     const incoming = newText.trim().split(/\s+/).filter(Boolean);
     rollingWindowRef.current = [...rollingWindowRef.current, ...incoming].slice(-40);
 
-    if (transcriptDebounceRef.current) clearTimeout(transcriptDebounceRef.current);
-    transcriptDebounceRef.current = setTimeout(() => {
-      if (!window.api) return;
-      const chunk = rollingWindowRef.current.join(' ');
-      if (chunk.length < 5) return;
-      window.api.sendTranscript(chunk);
-    }, 1500); // 1.5s of silence triggers detection
+    if (!window.api) return;
+    const chunk = rollingWindowRef.current.join(' ');
+    if (chunk.length < 5) return;
+    window.api.sendTranscript(chunk);
   };
 
   const handleManualSearch = async (e: React.FormEvent) => {
@@ -509,6 +574,34 @@ export default function OperatorConsole() {
   const project = (reference: string, text: string) => {
     window.api.forceProject({ reference, text, translation });
   };
+
+  const handleAdjacentVerse = async (direction: 'next' | 'prev') => {
+    if (!window.api || !activeProjected) return;
+
+    // Strip translation suffix like "Genesis 1:1 (KJV)" -> "Genesis 1:1"
+    const cleanRef = activeProjected.reference.replace(/\s*\([^)]*\)\s*$/, '');
+    const parsed = await window.api.parseReference(cleanRef);
+    if (!parsed) return;
+
+    const currentVerse = direction === 'next'
+      ? (parsed.verseEnd ?? parsed.verseStart ?? 1)
+      : (parsed.verseStart ?? 1);
+
+    const adjacent = await window.api.getAdjacentVerse({
+      translation,
+      book: parsed.book,
+      chapter: parsed.chapter,
+      verse: currentVerse,
+      direction
+    });
+
+    if (adjacent) {
+      const refFormatted = `${adjacent.book} ${adjacent.chapter}:${adjacent.verse} (${translation})`;
+      const textCombined = showVerseNumbers ? `[${adjacent.verse}] ${adjacent.text}` : adjacent.text;
+      project(refFormatted, textCombined);
+    }
+  };
+
 
   const addBookmark = (book: string, chapter: number, verseStart: number, verseEnd: number | undefined, _text: string) => {
     // Step 1: Set pending bookmark and pre-populate label with verse reference
@@ -599,7 +692,7 @@ export default function OperatorConsole() {
   const handleSaveSettings = () => {
     if (!window.api) return;
     window.api.setSettings('anthropicApiKey', apiKey);
-    window.api.setSettings('openAiApiKey', openAiApiKey);
+    window.api.setSettings('groqApiKey', groqApiKey);
     window.api.setSettings('selectedTranslation', translation);
     window.api.setSettings('fontSizeScale', fontSizeScale);
     window.api.setSettings('whisperUrl', whisperUrl);
@@ -702,10 +795,6 @@ export default function OperatorConsole() {
                 value={selectedAudioDevice}
                 onChange={(e) => {
                   setSelectedAudioDevice(e.target.value);
-                  if (isRecording) {
-                    stopMicrophone();
-                    setTimeout(startMicrophone, 200);
-                  }
                 }}
                 className="w-full text-sm bg-background border border-border rounded-md px-2.5 py-1.5 focus:ring-2 outline-none"
               >
@@ -756,7 +845,13 @@ export default function OperatorConsole() {
               <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Live Transcription</h3>
               {transcript && (
                 <button
-                  onClick={() => { setTranscript(''); setDetectedRefs([]); rollingWindowRef.current = []; }}
+                  onClick={() => {
+                    setTranscript('');
+                    setDetectedRefs([]);
+                    rollingWindowRef.current = [];
+                    if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+                    setIsFading(false);
+                  }}
                   className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
                 >
                   Clear
@@ -765,7 +860,7 @@ export default function OperatorConsole() {
             </div>
             <div className="flex-grow overflow-y-auto border border-border bg-background rounded-md p-4 custom-scrollbar text-sm font-mono leading-relaxed">
               {transcript || interimTranscript ? (
-                <div>
+                <div className={`transition-opacity duration-500 ${isFading ? 'opacity-0' : 'opacity-100'}`}>
                   <HighlightedTranscript text={transcript} detectedRefs={detectedRefs} />
                   {interimTranscript && (
                     <span className="text-muted-foreground/70 italic"> {interimTranscript}</span>
@@ -821,8 +916,24 @@ export default function OperatorConsole() {
               )}
             </div>
             <div className="flex justify-center gap-2">
+              <button 
+                onClick={() => handleAdjacentVerse('prev')}
+                disabled={!activeProjected}
+                className="px-2.5 py-1.5 border rounded text-xs font-semibold hover:bg-secondary disabled:opacity-40 disabled:pointer-events-none flex gap-1 items-center"
+                title="Previous Verse (Left Arrow)"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" /> Prev
+              </button>
               <button onClick={handleClear} className="px-3 py-1.5 border rounded text-xs font-semibold hover:bg-secondary flex gap-1 items-center"><Trash2 className="w-3.5 h-3.5" /> Clear</button>
               <button onClick={handleToggleBlackout} className={`px-3 py-1.5 border rounded text-xs font-semibold flex gap-1 items-center ${blackout ? 'bg-destructive text-white border-destructive' : 'hover:bg-secondary'}`}><Power className="w-3.5 h-3.5" /> Blackout</button>
+              <button 
+                onClick={() => handleAdjacentVerse('next')}
+                disabled={!activeProjected}
+                className="px-2.5 py-1.5 border rounded text-xs font-semibold hover:bg-secondary disabled:opacity-40 disabled:pointer-events-none flex gap-1 items-center"
+                title="Next Verse (Right Arrow)"
+              >
+                Next <ChevronRight className="w-3.5 h-3.5" />
+              </button>
             </div>
           </div>
 
@@ -894,7 +1005,13 @@ export default function OperatorConsole() {
               <div className="h-full flex flex-col">
                 <div className="p-3 border-b flex justify-between items-center bg-muted/30">
                   <span className="text-xs font-bold uppercase text-muted-foreground">Session History</span>
-                  {history.length > 0 && <button onClick={handleExportPDF} className="text-xs text-primary hover:underline">Export PDF</button>}
+                  {history.length > 0 && (
+                    <div className="flex gap-2">
+                      <button onClick={handleExportPDF} className="text-xs text-primary hover:underline">Export PDF</button>
+                      <span className="text-muted-foreground text-xs">|</span>
+                      <button onClick={() => setHistory([])} className="text-xs text-destructive hover:underline">Clear</button>
+                    </div>
+                  )}
                 </div>
                 <div className="flex-grow overflow-y-auto p-2 space-y-1 custom-scrollbar">
                   {history.length > 0 ? history.map((item, idx) => (
@@ -1064,8 +1181,11 @@ export default function OperatorConsole() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-foreground">OpenAI API Key</label>
-                    {openAiEnvKeyActive ? (
+                    <label className="text-xs font-semibold text-foreground flex justify-between items-center">
+                      <span>Groq API Key</span>
+                      <a href="https://console.groq.com" target="_blank" rel="noreferrer" className="text-[10px] text-primary hover:underline font-normal">Get Free Key</a>
+                    </label>
+                    {groqEnvKeyActive ? (
                       <div className="flex items-center gap-2 px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-xs text-emerald-600 dark:text-emerald-400">
                         <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                         <span>API key loaded from <code className="font-mono">.env</code> — not visible for security</span>
@@ -1073,16 +1193,16 @@ export default function OperatorConsole() {
                     ) : (
                       <input
                         type="password"
-                        value={openAiApiKey}
-                        onChange={e => setOpenAiApiKey(e.target.value)}
-                        placeholder="sk-proj-… (or add to .env file)"
+                        value={groqApiKey}
+                        onChange={e => setGroqApiKey(e.target.value)}
+                        placeholder="gsk_… (or add to .env file)"
                         className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
                       />
                     )}
                     <p className="text-[10px] text-muted-foreground">
-                      {openAiEnvKeyActive
+                      {groqEnvKeyActive
                         ? 'To change the key, edit the .env file in the project root.'
-                        : 'Required for Whisper speech-to-text transcription. Or add OPENAI_API_KEY to .env for better security.'}
+                        : 'Required for Whisper speech-to-text transcription. Or add GROQ_API_KEY to .env for better security.'}
                     </p>
                   </div>
 

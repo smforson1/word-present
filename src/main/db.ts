@@ -331,6 +331,43 @@ export class BibleDatabase {
     return records;
   }
 
+  /**
+   * Get the adjacent verse (next or previous) for a given reference.
+   */
+  public getAdjacentVerse(translation: string, book: string, chapter: number, verse: number, direction: 'next' | 'prev'): VerseRecord | null {
+    if (!this.db) return null;
+
+    // 1. Get current verse ID
+    let currentId: number | null = null;
+    const stmtId = this.db.prepare(`
+      SELECT id FROM verses 
+      WHERE translation = ? AND book = ? AND chapter = ? AND verse = ?
+      LIMIT 1
+    `);
+    stmtId.bind([translation, book, chapter, verse]);
+    if (stmtId.step()) {
+      currentId = (stmtId.getAsObject() as { id: number }).id;
+    }
+    stmtId.free();
+
+    if (currentId === null) return null;
+
+    // 2. Query adjacent verse
+    let result: VerseRecord | null = null;
+    const queryStr = direction === 'next'
+      ? `SELECT * FROM verses WHERE translation = ? AND id > ? ORDER BY id ASC LIMIT 1`
+      : `SELECT * FROM verses WHERE translation = ? AND id < ? ORDER BY id DESC LIMIT 1`;
+
+    const stmtAdj = this.db.prepare(queryStr);
+    stmtAdj.bind([translation, currentId]);
+    if (stmtAdj.step()) {
+      result = stmtAdj.getAsObject() as unknown as VerseRecord;
+    }
+    stmtAdj.free();
+
+    return result;
+  }
+
   // ── Bible Browser Methods ──────────────────────────────────────────
 
   /** Get ordered list of all books for a translation */

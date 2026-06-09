@@ -5,6 +5,7 @@ export interface ExtractedReference {
   chapter: number;
   verse?: number;
   endVerse?: number;
+  reason?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +35,45 @@ export function normalizeSpokenNumbers(text: string): string {
   };
   let result = text.replace(/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/gi,
     (m) => ordinals[m.toLowerCase()] ?? m);
+
+  // Replace "one hundred and twenty three" / "one hundred twenty-three" / "one hundred twenty three"
+  result = result.replace(
+    /\b(one|two|three|four|five|six|seven|eight|nine)\s+hundred\s*(?:and)?\s*(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:\s+(one|two|three|four|five|six|seven|eight|nine))?\b/gi,
+    (_, hundredWord, tensWord, onesWord) => {
+      const hIdx = ONES.indexOf(hundredWord.toLowerCase());
+      const tIdx = TENS.indexOf(tensWord.toLowerCase());
+      const oIdx = onesWord ? ONES.indexOf(onesWord.toLowerCase()) : 0;
+      if (hIdx !== -1 && tIdx !== -1 && oIdx !== -1) {
+        return String(hIdx * 100 + tIdx * 10 + oIdx);
+      }
+      return _;
+    }
+  );
+
+  // Replace "one hundred and sixteen" / "one hundred sixteen"
+  result = result.replace(
+    /\b(one|two|three|four|five|six|seven|eight|nine)\s+hundred\s*(?:and)?\s*(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/gi,
+    (_, hundredWord, onesWord) => {
+      const hIdx = ONES.indexOf(hundredWord.toLowerCase());
+      const oIdx = ONES.indexOf(onesWord.toLowerCase());
+      if (hIdx !== -1 && oIdx !== -1) {
+        return String(hIdx * 100 + oIdx);
+      }
+      return _;
+    }
+  );
+
+  // Replace "one hundred"
+  result = result.replace(
+    /\b(one|two|three|four|five|six|seven|eight|nine)\s+hundred\b/gi,
+    (_, hundredWord) => {
+      const hIdx = ONES.indexOf(hundredWord.toLowerCase());
+      if (hIdx !== -1) {
+        return String(hIdx * 100);
+      }
+      return _;
+    }
+  );
 
   // Replace compound spoken numbers: "twenty three" → "23", "thirty one" → "31"
   result = result.replace(
@@ -81,18 +121,56 @@ const BOOK_REGEX = new RegExp(
   'i'
 );
 
+const SEMANTIC_TRIGGERS = [
+  'bible says', 'scripture says', 'it is written', 'word of god',
+  'jesus said', 'paul wrote', 'psalmist says', 'prophet says',
+  'god tells us', 'we read in', 'the bible teaches', 'jesus teaches',
+  'bible tells us', 'scripture tells us'
+];
+
+const THEOLOGICAL_KEYWORDS = [
+  'god', 'lord', 'christ', 'jesus', 'spirit', 'faith', 'grace', 'sin', 'sinful',
+  'righteousness', 'salvation', 'gospel', 'bible', 'scripture', 'holy', 'heaven',
+  'kingdom', 'commandment', 'prophet', 'apostle', 'covenant', 'mercy', 'glory',
+  'repent', 'redeem', 'worship', 'praise', 'prayer', 'blessing', 'cross', 'resurrection',
+  'eternal', 'shepherd', 'command', 'commanded', 'testimony', 'truth', 'life', 'death'
+];
+
 export function mightContainScriptureReference(text: string): boolean {
-  if (!BOOK_REGEX.test(text)) return false;
-  // Must also have at least one digit or number word near the book name
-  const normalized = normalizeSpokenNumbers(text);
-  return /\d/.test(normalized);
+  const t = text.toLowerCase();
+  
+  // 1. Explicit check: contains a book name
+  if (BOOK_REGEX.test(t)) {
+    const normalized = normalizeSpokenNumbers(t);
+    if (/\d/.test(normalized)) return true;
+  }
+  
+  // 2. Semantic trigger check: contains a direct citation phrase
+  for (const trigger of SEMANTIC_TRIGGERS) {
+    if (t.includes(trigger)) return true;
+  }
+  
+  // 3. Keyword density check: contains at least 2 theological keywords
+  const foundKeywords = new Set<string>();
+  const words = t.split(/\s+/);
+  for (const word of words) {
+    const cleanWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, '');
+    if (THEOLOGICAL_KEYWORDS.includes(cleanWord)) {
+      foundKeywords.add(cleanWord);
+      if (foundKeywords.size >= 2) return true;
+    }
+  }
+  
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Claude detection
 // ─────────────────────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are an expert AI Bible Scripture Reference Detector.
-Your task is to analyze the provided transcript chunk from a spoken sermon and identify any spoken Bible scripture references.
+Your task is to analyze the provided transcript chunk from a spoken sermon and identify:
+1. Spoken scripture references (e.g. "John 3:16").
+2. Direct quotes or clear semantic paraphrases of Bible verses (e.g. "for the wages of sin is death but the gift of God is eternal life" -> Romans 6:23).
 
 The input text has already been pre-processed to convert spoken word-numbers into digits (e.g., "john three sixteen" → "john 3 16"). Use this to your advantage.
 
@@ -101,18 +179,14 @@ Analyze the text and output a JSON array of objects. Each object must have:
 - "chapter": The chapter number (integer).
 - "verse": The verse number (integer, optional).
 - "endVerse": The ending verse number if a range is mentioned (integer, optional).
-
-Example output:
-[
-  {"book": "John", "chapter": 3, "verse": 16},
-  {"book": "Psalms", "chapter": 23, "verse": 1, "endVerse": 6}
-]
+- "reason": A brief reason describing the nature of the match (e.g., "Explicit citation" or "Paraphrase of Psalms 23:1").
 
 Strict Rules:
 1. Return ONLY the raw JSON array — no markdown, no explanation.
-2. If no scripture reference is detected, return: []
-3. Ignore casual mentions that are not clear citations.
-4. Numbered books: "1 Corinthians", "2 Timothy", "1 John" — always include the number prefix.`;
+2. If no scripture reference or clear paraphrase is detected, return: []
+3. Ignore casual conversational speech. Only extract clear paraphrases or quotes of scripture.
+4. Numbered books: "1 Corinthians", "2 Timothy", "1 John" — always include the number prefix.
+5. Never extract or assume a verse number if it was not explicitly spoken or clearly paraphrased in the text (e.g. do not extract book-only or chapter-only references unless they contain a clear paraphrase of a specific verse).`;
 
 export async function detectScriptureReferences(apiKey: string, transcriptText: string): Promise<ExtractedReference[]> {
   if (!apiKey || !transcriptText.trim()) return [];
