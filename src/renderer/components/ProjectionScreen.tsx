@@ -13,8 +13,9 @@ export default function ProjectionScreen() {
 
   // Customization State
   const [bgColor, setBgColor] = useState('#000000');
-  const [bgMode, setBgMode] = useState<'color' | 'image'>('color');
+  const [bgMode, setBgMode] = useState<'color' | 'image' | 'gradient'>('color');
   const [bgImage, setBgImage] = useState('');
+  const [bgGradient, setBgGradient] = useState('twilight');
   const [fontFamily, setFontFamily] = useState('serif');
   const [fontSizeScale, setFontSizeScale] = useState(1.0);
 
@@ -26,6 +27,7 @@ export default function ProjectionScreen() {
       if (settings.projectionBgColor) setBgColor(settings.projectionBgColor);
       if (settings.projectionBgMode) setBgMode(settings.projectionBgMode);
       if (settings.projectionBgImage) setBgImage(settings.projectionBgImage);
+      if (settings.projectionBgGradient) setBgGradient(settings.projectionBgGradient);
       if (settings.projectionFontFamily) setFontFamily(settings.projectionFontFamily);
       if (settings.fontSizeScale) setFontSizeScale(settings.fontSizeScale);
     });
@@ -54,8 +56,9 @@ export default function ProjectionScreen() {
       if (!status) return;
       if (typeof status.blackout === 'boolean') setBlackout(status.blackout);
       if (status.projectionBgColor) setBgColor(status.projectionBgColor);
-      if (status.projectionBgMode) setBgMode(status.projectionBgMode as 'color' | 'image');
+      if (status.projectionBgMode) setBgMode(status.projectionBgMode as 'color' | 'image' | 'gradient');
       if (status.projectionBgImage) setBgImage(status.projectionBgImage);
+      if (status.projectionBgGradient) setBgGradient(status.projectionBgGradient);
       if (status.projectionFontFamily) setFontFamily(status.projectionFontFamily);
       if (status.fontSizeScale) setFontSizeScale(status.fontSizeScale);
     });
@@ -66,6 +69,22 @@ export default function ProjectionScreen() {
       unsubscribeStatus();
     };
   }, []);
+
+  // Map font ID to CSS font-family and whether it should be italic
+  const getFontStyle = (id: string): { fontFamily: string; fontStyle?: string } => {
+    switch (id) {
+      case 'cinzel':           return { fontFamily: '"Cinzel", serif' };
+      case 'eb-garamond':      return { fontFamily: '"EB Garamond", serif', fontStyle: 'italic' };
+      case 'lora':             return { fontFamily: '"Lora", serif', fontStyle: 'italic' };
+      case 'playfair-display': return { fontFamily: '"Playfair Display", serif', fontStyle: 'italic' };
+      case 'raleway':          return { fontFamily: '"Raleway", sans-serif' };
+      case 'inter':            return { fontFamily: '"Inter", sans-serif' };
+      // Legacy fallbacks
+      case 'serif':            return { fontFamily: 'Georgia, serif', fontStyle: 'italic' };
+      case 'sans-serif':       return { fontFamily: 'system-ui, sans-serif' };
+      default:                 return { fontFamily: '"EB Garamond", serif', fontStyle: 'italic' };
+    }
+  };
 
   // Responsive font auto-scaling based on length to ensure 0 text truncation or overflow
   const getFontSize = (text: string) => {
@@ -102,6 +121,21 @@ export default function ProjectionScreen() {
         </div>
       )}
 
+      {/* Animated HSL Gradient Layer */}
+      {bgMode === 'gradient' && (
+        <div 
+          className={`absolute inset-0 transition-all duration-1000 z-0 pointer-events-none ${
+            bgGradient === 'twilight' ? 'gradient-twilight' :
+            bgGradient === 'aurora' ? 'gradient-aurora' :
+            bgGradient === 'forest' ? 'gradient-forest' :
+            bgGradient === 'golden' ? 'gradient-golden' : ''
+          }`}
+        >
+          {/* Dark legibility gradient overlay */}
+          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/35" />
+        </div>
+      )}
+
       {/* Blackout Mask Overlay */}
       <div 
         className={`absolute inset-0 bg-black z-50 transition-opacity duration-300 pointer-events-none ${
@@ -126,11 +160,13 @@ export default function ProjectionScreen() {
 
           {/* Main Verse Text Section */}
           <div className="flex-grow flex items-center justify-center py-8">
-            <p 
-              className={`text-center font-medium drop-shadow-md text-zinc-100 max-w-[85vw] ${
-                fontFamily === 'serif' ? 'font-serif italic' : 'font-sans'
-              }`}
-              style={{ fontSize: `calc(1vw * ${parseFloat(getFontSize(scripture.text).split('[')[1].split('v')[0])})`, lineHeight: getFontSize(scripture.text).split(' ')[1].split('-')[1] }}
+            <p
+              className="text-center font-medium drop-shadow-md text-zinc-100 max-w-[85vw]"
+              style={{
+                fontSize: `calc(1vw * ${parseFloat(getFontSize(scripture.text).split('[')[1].split('v')[0])})`,
+                lineHeight: getFontSize(scripture.text).split(' ')[1].split('-')[1],
+                ...getFontStyle(fontFamily)
+              }}
             >
               “{scripture.text}”
             </p>
@@ -138,7 +174,10 @@ export default function ProjectionScreen() {
 
           {/* Bottom Reference Citation Panel */}
           <div className="flex justify-center border-t border-white/20 pt-6">
-            <h2 className="text-[4.5vw] font-bold tracking-wide drop-shadow-md" style={{ color: '#C9A227', fontFamily: fontFamily === 'serif' ? 'serif' : 'sans-serif' }}>
+            <h2
+              className="text-[4.5vw] font-bold tracking-wide drop-shadow-md"
+              style={{ color: '#C9A227', ...getFontStyle(fontFamily), fontStyle: 'normal' }}
+            >
               {scripture.reference}
             </h2>
           </div>

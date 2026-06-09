@@ -58,8 +58,9 @@ interface AppSettings {
   theme: string;
   whisperUrl: string;
   projectionBgColor: string;
-  projectionBgMode: 'color' | 'image';
+  projectionBgMode: 'color' | 'image' | 'gradient';
   projectionBgImage: string;
+  projectionBgGradient: string;
   projectionFontFamily: string;
   showVerseNumbers: boolean;
   aiMode: string;

@@ -333,6 +333,7 @@ function setupIpcHandlers() {
     store.set(key, value);
     // Notify window components of theme/projection updates if settings change
     if (key === 'theme' || key === 'projectionBgColor' || key === 'projectionBgMode' || key === 'projectionBgImage' ||
+        key === 'projectionBgGradient' ||
         key === 'projectionFontFamily' || key === 'showVerseNumbers' || key === 'fontSizeScale') {
       broadcastSync('sync:status', { [key]: value });
     }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+﻿import React, { useEffect, useState, useRef } from 'react';
 import { 
   Mic, MicOff, Tv, Volume2, 
   Send, Trash2, Moon, Sun, AlertTriangle, CheckCircle, Info, Power,
@@ -33,6 +33,13 @@ const BACKGROUND_THEMES = [
   { id: 'aurora', name: 'Northern Lights', url: 'backgrounds/aurora.jpg' },
   { id: 'waterfall', name: 'Waterfall Mist', url: 'backgrounds/waterfall.jpg' },
   { id: 'abstract_gradient', name: 'Abstract Gradient', url: 'backgrounds/abstract_gradient.jpg' }
+];
+
+const GRADIENT_THEMES = [
+  { id: 'twilight', name: 'Twilight Glassmorphism', className: 'gradient-twilight', previewStyle: 'linear-gradient(135deg, hsl(260, 45%, 12%), hsl(290, 40%, 10%))' },
+  { id: 'aurora', name: 'Midnight Aurora', className: 'gradient-aurora', previewStyle: 'linear-gradient(135deg, hsl(210, 55%, 8%), hsl(180, 45%, 10%))' },
+  { id: 'forest', name: 'Velvet Forest', className: 'gradient-forest', previewStyle: 'linear-gradient(135deg, hsl(140, 35%, 8%), hsl(165, 30%, 10%))' },
+  { id: 'golden', name: 'Golden Hour', className: 'gradient-golden', previewStyle: 'linear-gradient(135deg, hsl(15, 45%, 10%), hsl(35, 40%, 12%))' }
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,8 +83,9 @@ export default function OperatorConsole() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [whisperUrl, setWhisperUrl] = useState('http://localhost:8080');
   const [projectionBgColor, setProjectionBgColor] = useState('#000000');
-  const [projectionBgMode, setProjectionBgMode] = useState<'color' | 'image'>('color');
+  const [projectionBgMode, setProjectionBgMode] = useState<'color' | 'image' | 'gradient'>('color');
   const [projectionBgImage, setProjectionBgImage] = useState('');
+  const [projectionBgGradient, setProjectionBgGradient] = useState<string>('twilight');
   const [projectionFontFamily, setProjectionFontFamily] = useState('serif');
   const [showVerseNumbers, setShowVerseNumbers] = useState(false);
   const [aiMode, setAiMode] = useState('auto-project');
@@ -153,6 +161,7 @@ export default function OperatorConsole() {
       setProjectionBgColor(settings.projectionBgColor || '#000000');
       setProjectionBgMode(settings.projectionBgMode || 'color');
       setProjectionBgImage(settings.projectionBgImage || '');
+      setProjectionBgGradient(settings.projectionBgGradient || 'twilight');
       setProjectionFontFamily(settings.projectionFontFamily || 'serif');
       setShowVerseNumbers(settings.showVerseNumbers || false);
       setAiMode(settings.aiMode || 'auto-project');
@@ -689,21 +698,6 @@ export default function OperatorConsole() {
     reader.readAsDataURL(file);
   };
 
-  const handleSaveSettings = () => {
-    if (!window.api) return;
-    window.api.setSettings('anthropicApiKey', apiKey);
-    window.api.setSettings('groqApiKey', groqApiKey);
-    window.api.setSettings('selectedTranslation', translation);
-    window.api.setSettings('fontSizeScale', fontSizeScale);
-    window.api.setSettings('whisperUrl', whisperUrl);
-    window.api.setSettings('projectionBgColor', projectionBgColor);
-    window.api.setSettings('projectionBgMode', projectionBgMode);
-    window.api.setSettings('projectionBgImage', projectionBgImage);
-    window.api.setSettings('projectionFontFamily', projectionFontFamily);
-    window.api.setSettings('showVerseNumbers', showVerseNumbers);
-    window.api.setSettings('aiMode', aiMode);
-    addAiLog('success', 'Configuration settings updated and saved locally.');
-  };
 
   const handleExportPDF = async () => {
     if (!window.api || history.length === 0) return;
@@ -888,6 +882,19 @@ export default function OperatorConsole() {
                   <div className="absolute inset-0 bg-black/45" />
                 </div>
               )}
+              {/* Animated HSL Gradient Layer inside Preview */}
+              {projectionBgMode === 'gradient' && (
+                <div 
+                  className={`absolute inset-0 transition-all duration-500 z-0 pointer-events-none ${
+                    projectionBgGradient === 'twilight' ? 'gradient-twilight' :
+                    projectionBgGradient === 'aurora' ? 'gradient-aurora' :
+                    projectionBgGradient === 'forest' ? 'gradient-forest' :
+                    projectionBgGradient === 'golden' ? 'gradient-golden' : ''
+                  }`}
+                >
+                  <div className="absolute inset-0 bg-black/20" />
+                </div>
+              )}
               {blackout && (
                 <div className="absolute inset-0 bg-black z-20 flex items-center justify-center border-4 border-destructive rounded-lg">
                   <div className="text-center text-destructive font-extrabold uppercase tracking-widest"><AlertTriangle className="w-8 h-8 mx-auto mb-1" /> BLACKOUT</div>
@@ -903,8 +910,27 @@ export default function OperatorConsole() {
                     <span>{activeProjected.translation}</span>
                   </div>
                   <div className="flex-grow flex items-center justify-center px-4">
-                    <p className={`text-center text-sm font-medium ${projectionFontFamily === 'serif' ? 'font-serif italic' : 'font-sans'}`}>
-                      “{activeProjected.text}”
+                    <p
+                      className="text-center text-sm font-medium"
+                      style={{
+                        fontFamily:
+                          projectionFontFamily === 'cinzel'           ? '"Cinzel", serif' :
+                          projectionFontFamily === 'eb-garamond'      ? '"EB Garamond", serif' :
+                          projectionFontFamily === 'lora'             ? '"Lora", serif' :
+                          projectionFontFamily === 'playfair-display' ? '"Playfair Display", serif' :
+                          projectionFontFamily === 'raleway'          ? '"Raleway", sans-serif' :
+                          projectionFontFamily === 'inter'            ? '"Inter", sans-serif' :
+                          projectionFontFamily === 'sans-serif'       ? 'system-ui, sans-serif' :
+                          'Georgia, serif',
+                        fontStyle:
+                          projectionFontFamily === 'raleway' ||
+                          projectionFontFamily === 'inter' ||
+                          projectionFontFamily === 'cinzel' ||
+                          projectionFontFamily === 'sans-serif'
+                            ? 'normal' : 'italic'
+                      }}
+                    >
+                      &ldquo;{activeProjected.text}&rdquo;
                     </p>
                   </div>
                   <div className="flex justify-center border-t border-white/20 pt-1 text-[11px] font-bold text-gold">
@@ -1169,6 +1195,7 @@ export default function OperatorConsole() {
                         type="password"
                         value={apiKey}
                         onChange={e => setApiKey(e.target.value)}
+                        onBlur={e => { if (window.api) window.api.setSettings('anthropicApiKey', e.target.value); }}
                         placeholder="sk-ant-… (or add to .env file)"
                         className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
                       />
@@ -1195,6 +1222,7 @@ export default function OperatorConsole() {
                         type="password"
                         value={groqApiKey}
                         onChange={e => setGroqApiKey(e.target.value)}
+                        onBlur={e => { if (window.api) window.api.setSettings('groqApiKey', e.target.value); }}
                         placeholder="gsk_… (or add to .env file)"
                         className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
                       />
@@ -1210,7 +1238,11 @@ export default function OperatorConsole() {
                     <label className="text-xs font-semibold text-foreground">Detection Mode</label>
                     <select
                       value={aiMode}
-                      onChange={e => setAiMode(e.target.value)}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setAiMode(val);
+                        if (window.api) window.api.setSettings('aiMode', val);
+                      }}
                       className="w-full text-xs p-2 bg-card border rounded outline-none"
                     >
                       <option value="auto-project">Auto-Project — project instantly when detected</option>
@@ -1224,6 +1256,7 @@ export default function OperatorConsole() {
                       type="text"
                       value={whisperUrl}
                       onChange={e => setWhisperUrl(e.target.value)}
+                      onBlur={e => { if (window.api) window.api.setSettings('whisperUrl', e.target.value); }}
                       placeholder="http://localhost:8080"
                       className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
                     />
@@ -1234,8 +1267,29 @@ export default function OperatorConsole() {
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold uppercase text-muted-foreground border-b pb-1">Projection Display</h3>
                   <div className="space-y-1">
-                    <label className="text-xs font-semibold text-foreground flex justify-between">Font Size Scale <span>{fontSizeScale.toFixed(1)}x</span></label>
-                    <input type="range" min="0.5" max="2.0" step="0.1" value={fontSizeScale} onChange={e => setFontSizeScale(parseFloat(e.target.value))} className="w-full" />
+                    <label className="text-xs font-semibold text-foreground flex justify-between">Font Size Scale <span className="text-primary font-bold">{fontSizeScale.toFixed(1)}x</span></label>
+                    <input
+                      type="range"
+                      min="0.5"
+                      max="2.0"
+                      step="0.1"
+                      value={fontSizeScale}
+                      onChange={e => {
+                        const val = parseFloat(e.target.value);
+                        setFontSizeScale(val);
+                        // Broadcast immediately for real-time preview on projection screen
+                        if (window.api) {
+                          window.api.setSettings('fontSizeScale', val);
+                          window.api.broadcastStatus({ fontSizeScale: val });
+                        }
+                      }}
+                      className="w-full accent-primary"
+                    />
+                    <div className="flex justify-between text-[10px] text-muted-foreground">
+                      <span>0.5x (Smaller)</span>
+                      <span>1.0x (Default)</span>
+                      <span>2.0x (Larger)</span>
+                    </div>
                   </div>
                   
                   <div className="space-y-2">
@@ -1245,7 +1299,10 @@ export default function OperatorConsole() {
                         type="button"
                         onClick={() => {
                           setProjectionBgMode('color');
-                          if (window.api) window.api.setSettings('projectionBgMode', 'color');
+                          if (window.api) {
+                            window.api.setSettings('projectionBgMode', 'color');
+                            window.api.broadcastStatus({ projectionBgMode: 'color' });
+                          }
                         }}
                         className={`flex-1 py-1 text-[11px] font-bold rounded transition-all ${
                           projectionBgMode === 'color' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
@@ -1257,32 +1314,98 @@ export default function OperatorConsole() {
                         type="button"
                         onClick={() => {
                           setProjectionBgMode('image');
-                          if (window.api) window.api.setSettings('projectionBgMode', 'image');
+                          if (window.api) {
+                            window.api.setSettings('projectionBgMode', 'image');
+                            window.api.broadcastStatus({ projectionBgMode: 'image' });
+                          }
                         }}
                         className={`flex-1 py-1 text-[11px] font-bold rounded transition-all ${
                           projectionBgMode === 'image' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        Background Image
+                        Image
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProjectionBgMode('gradient');
+                          if (window.api) {
+                            window.api.setSettings('projectionBgMode', 'gradient');
+                            window.api.setSettings('projectionBgGradient', projectionBgGradient);
+                            window.api.broadcastStatus({ 
+                              projectionBgMode: 'gradient',
+                              projectionBgGradient: projectionBgGradient
+                            });
+                          }
+                        }}
+                        className={`flex-1 py-1 text-[11px] font-bold rounded transition-all ${
+                          projectionBgMode === 'gradient' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        Animated HSL
                       </button>
                     </div>
                   </div>
 
-                  {projectionBgMode === 'color' ? (
+                  {projectionBgMode === 'color' && (
                     <div className="space-y-1">
                       <label className="text-xs font-semibold text-foreground">Background Color</label>
                       <div className="flex gap-2">
                         <input type="color" value={projectionBgColor} onChange={e => {
                           setProjectionBgColor(e.target.value);
-                          if (window.api) window.api.setSettings('projectionBgColor', e.target.value);
+                          if (window.api) {
+                            window.api.setSettings('projectionBgColor', e.target.value);
+                            window.api.broadcastStatus({ projectionBgColor: e.target.value });
+                          }
                         }} className="w-8 h-8 rounded border p-0 cursor-pointer" />
                         <input type="text" value={projectionBgColor} onChange={e => {
                           setProjectionBgColor(e.target.value);
-                          if (window.api) window.api.setSettings('projectionBgColor', e.target.value);
+                          if (window.api) {
+                            window.api.setSettings('projectionBgColor', e.target.value);
+                            window.api.broadcastStatus({ projectionBgColor: e.target.value });
+                          }
                         }} className="w-full text-xs px-2 bg-card border rounded" />
                       </div>
                     </div>
-                  ) : (
+                  )}
+
+                  {projectionBgMode === 'gradient' && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-foreground">Select Animated HSL Gradient</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {GRADIENT_THEMES.map((theme) => {
+                          const isActive = projectionBgGradient === theme.id;
+                          return (
+                            <button
+                              type="button"
+                              key={theme.id}
+                              onClick={() => {
+                                setProjectionBgGradient(theme.id);
+                                if (window.api) {
+                                  window.api.setSettings('projectionBgGradient', theme.id);
+                                  window.api.setSettings('projectionBgMode', 'gradient');
+                                  window.api.broadcastStatus({ 
+                                    projectionBgMode: 'gradient',
+                                    projectionBgGradient: theme.id 
+                                  });
+                                }
+                              }}
+                              className={`relative p-3 rounded overflow-hidden border-2 text-left transition-all h-16 flex flex-col justify-end ${
+                                isActive ? 'border-primary shadow-sm ring-1 ring-primary/20 scale-[1.02]' : 'border-border/60 hover:border-border'
+                              }`}
+                              style={{ background: theme.previewStyle }}
+                            >
+                              <span className="text-xs font-bold text-white drop-shadow-md select-none leading-tight">
+                                {theme.name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {projectionBgMode === 'image' && (
                     <div className="space-y-2">
                       <label className="text-xs font-semibold text-foreground">Select Background Image</label>
                       <div className="grid grid-cols-5 gap-1.5">
@@ -1297,6 +1420,10 @@ export default function OperatorConsole() {
                                 if (window.api) {
                                   window.api.setSettings('projectionBgImage', theme.url);
                                   window.api.setSettings('projectionBgMode', 'image');
+                                  window.api.broadcastStatus({
+                                    projectionBgMode: 'image',
+                                    projectionBgImage: theme.url
+                                  });
                                 }
                               }}
                               className={`relative aspect-video rounded overflow-hidden border-2 transition-all ${
@@ -1317,6 +1444,10 @@ export default function OperatorConsole() {
                               if (window.api) {
                                 window.api.setSettings('projectionBgImage', projectionBgImage);
                                 window.api.setSettings('projectionBgMode', 'image');
+                                window.api.broadcastStatus({
+                                  projectionBgMode: 'image',
+                                  projectionBgImage
+                                });
                               }
                             }}
                             className="relative aspect-video rounded overflow-hidden border-2 border-primary shadow-sm ring-1 ring-primary/20 scale-[1.03]"
@@ -1342,22 +1473,61 @@ export default function OperatorConsole() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <div className="col-span-2 space-y-1">
-                      <label className="text-xs font-semibold text-foreground">Font Family</label>
-                      <select value={projectionFontFamily} onChange={e => setProjectionFontFamily(e.target.value)} className="w-full text-xs p-2 bg-card border rounded outline-none">
-                        <option value="serif">Serif (Traditional)</option>
-                        <option value="sans-serif">Sans-Serif (Modern)</option>
-                      </select>
+                  <div className="space-y-2 pt-1">
+                    <label className="text-xs font-semibold text-foreground">Projection Font</label>
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {[
+                        { id: 'cinzel',           label: 'Cinzel',           sub: 'Classical / Majestic',   style: { fontFamily: '"Cinzel", serif' } },
+                        { id: 'eb-garamond',      label: 'EB Garamond',      sub: 'Traditional Scripture',  style: { fontFamily: '"EB Garamond", serif', fontStyle: 'italic' } },
+                        { id: 'lora',             label: 'Lora',             sub: 'Literary Serif',         style: { fontFamily: '"Lora", serif', fontStyle: 'italic' } },
+                        { id: 'playfair-display', label: 'Playfair Display', sub: 'Editorial / Elegant',    style: { fontFamily: '"Playfair Display", serif', fontStyle: 'italic' } },
+                        { id: 'raleway',          label: 'Raleway',          sub: 'Modern / Clean',         style: { fontFamily: '"Raleway", sans-serif' } },
+                        { id: 'inter',            label: 'Inter',            sub: 'Minimal / Contemporary', style: { fontFamily: '"Inter", sans-serif' } },
+                      ].map(font => {
+                        const isActive = projectionFontFamily === font.id;
+                        return (
+                          <button
+                            type="button"
+                            key={font.id}
+                            onClick={() => {
+                              setProjectionFontFamily(font.id);
+                              if (window.api) {
+                                window.api.setSettings('projectionFontFamily', font.id);
+                                window.api.broadcastStatus({ projectionFontFamily: font.id });
+                              }
+                            }}
+                            className={`flex items-center justify-between px-3 py-2 rounded border transition-all text-left ${
+                              isActive
+                                ? 'border-primary bg-primary/10 shadow-sm'
+                                : 'border-border/60 hover:border-border bg-transparent'
+                            }`}
+                          >
+                            <div>
+                              <span className="text-sm font-medium" style={font.style}>{font.label}</span>
+                              <span className="block text-[10px] text-muted-foreground">{font.sub}</span>
+                            </div>
+                            {isActive && <span className="text-primary text-xs font-bold">✓</span>}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                   
-                  <label className="flex items-center gap-2 text-xs font-semibold pt-1">
-                    <input type="checkbox" checked={showVerseNumbers} onChange={e => setShowVerseNumbers(e.target.checked)} /> Show verse numbers in text
+                  <label className="flex items-center gap-2 text-xs font-semibold pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={showVerseNumbers}
+                      onChange={e => {
+                        const val = e.target.checked;
+                        setShowVerseNumbers(val);
+                        if (window.api) {
+                          window.api.setSettings('showVerseNumbers', val);
+                          window.api.broadcastStatus({ showVerseNumbers: val });
+                        }
+                      }}
+                    /> Show verse numbers in text
                   </label>
                 </div>
-
-                <button onClick={handleSaveSettings} className="w-full bg-primary text-primary-foreground py-2 rounded text-xs font-bold hover:opacity-90">Apply & Save Settings</button>
               </div>
             )}
           </div>
