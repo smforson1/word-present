@@ -1,0 +1,23 @@
+{
+  "appId": "com.scripture-presenter.app",
+  "productName": "Scripture Presenter",
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "bible.db"
+  ],
+  "extraResources": [
+    { "from": "bible.db", "to": "bible.db" }
+  ],
+  "asar": true,
+  "win": {
+    "target": "nsis"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}

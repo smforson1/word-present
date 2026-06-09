@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+release/
+
+# Environment — never commit secrets
+.env
+
+# Database
+bible.db
+*.db
+
+# Logs
+*.log
+
+# Editor
+.vscode/settings.json
+
+# Scratch / Temp files
+scratch/
