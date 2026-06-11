@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   Mic, MicOff, Tv, Volume2, 
   Send, Trash2, Moon, Sun, AlertTriangle, CheckCircle, Info, Power,
@@ -73,6 +73,10 @@ function HighlightedTranscript({ text, detectedRefs }: { text: string; detectedR
 
 
 
+// Module-level flag — survives React StrictMode's double-mount in dev.
+// Ensures speech:init IPC is sent at most once per renderer process lifetime.
+let speechEngineInitStarted = false;
+
 export default function OperatorConsole() {
   // Config & Settings State
   const [apiKey, setApiKey] = useState('');
@@ -109,6 +113,7 @@ export default function OperatorConsole() {
   const [interimTranscript, setInterimTranscript] = useState('');
   const [detectedRefs, setDetectedRefs] = useState<string[]>([]);
   const [speechEngineStatus, setSpeechEngineStatus] = useState<'idle' | 'downloading' | 'loading' | 'ready' | 'error'>('idle');
+  const [modelProgressDetail, setModelProgressDetail] = useState('');
   const [aiLogs, setAiLogs] = useState<AILogItem[]>([]);
   const [activeProjected, setActiveProjected] = useState<{ reference: string; text: string; translation: string } | null>(null);
   const [blackout, setBlackout] = useState(false);
@@ -138,11 +143,11 @@ export default function OperatorConsole() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const audioStreamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const pcmBufferRef = useRef<Float32Array>(new Float32Array(0));
   const rollingWindowRef = useRef<string[]>([]);
-  const workerInitDone = useRef(false);
-  const sliceIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const subtitleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const detectDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -175,8 +180,8 @@ export default function OperatorConsole() {
 
     // Initialize Whisper speech engine via main process IPC
     let unsubProgress: (() => void) | null = null;
-    if (!workerInitDone.current) {
-      workerInitDone.current = true;
+    if (!speechEngineInitStarted) {
+      speechEngineInitStarted = true;
       setSpeechEngineStatus('loading');
       addAiLog('info', 'Loading offline speech model…');
 
@@ -185,15 +190,19 @@ export default function OperatorConsole() {
         const { status, detail } = data;
         if (status === 'downloading') {
           setSpeechEngineStatus('downloading');
+          setModelProgressDetail(detail ?? 'Downloading model…');
           addAiLog('info', detail ?? 'Downloading model…');
         } else if (status === 'loading') {
           setSpeechEngineStatus('loading');
+          setModelProgressDetail(detail ?? 'Loading model into memory…');
           addAiLog('info', detail ?? 'Loading model into memory…');
         } else if (status === 'ready') {
           setSpeechEngineStatus('ready');
+          setModelProgressDetail('');
           addAiLog('success', detail ?? 'Offline speech model ready — click Start Listening to begin.');
         } else if (status === 'error') {
           setSpeechEngineStatus('error');
+          setModelProgressDetail(detail ?? 'Speech model failed to load.');
           addAiLog('error', detail ?? 'Speech model failed to load.');
         }
       });
@@ -355,34 +364,70 @@ export default function OperatorConsole() {
     }, ...prev.slice(0, 49)]);
   };
 
+  // ── Encode Float32 PCM samples into a WAV ArrayBuffer ─────────────────
+  const encodeWav = (samples: Float32Array, sampleRate: number): ArrayBuffer => {
+    const dataLen = samples.length * 2; // Int16 = 2 bytes per sample
+    const buffer = new ArrayBuffer(44 + dataLen);
+    const view = new DataView(buffer);
+    const ws = (off: number, str: string) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+    ws(0, 'RIFF');  view.setUint32(4, 36 + dataLen, true);
+    ws(8, 'WAVE');  ws(12, 'fmt ');
+    view.setUint32(16, 16, true);         // PCM sub-chunk size
+    view.setUint16(20, 1, true);          // PCM format
+    view.setUint16(22, 1, true);          // mono
+    view.setUint32(24, sampleRate, true); // sample rate
+    view.setUint32(28, sampleRate * 2, true); // byte rate (sr * channels * bytesPerSample)
+    view.setUint16(32, 2, true);          // block align
+    view.setUint16(34, 16, true);         // bits per sample
+    ws(36, 'data'); view.setUint32(40, dataLen, true);
+    let off = 44;
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      off += 2;
+    }
+    return buffer;
+  };
+
   // ── Audio chunk → Whisper transcription via main process IPC ────────────
-  const processAudioChunk = async (audioBuffer: Uint8Array) => {
+  // Receives raw Float32 PCM at 16 kHz directly from the ScriptProcessorNode —
+  // no WebM decoding step, no blob handling, no fragility.
+  const processAudioChunk = async (samples: Float32Array) => {
     if (!isRecordingRef.current) return;
     try {
-      console.log(`[AudioProcessor] Processing audio chunk: ${audioBuffer.length} bytes.`);
+      // RMS energy gate — skip chunks that are just background silence
+      let rms = 0;
+      for (let i = 0; i < samples.length; i++) rms += samples[i] * samples[i];
+      rms = Math.sqrt(rms / samples.length);
+      if (rms < 0.003) {
+        console.log(`[AudioProcessor] Chunk too quiet (rms=${rms.toFixed(4)}), skipping.`);
+        return;
+      }
+
+      console.log(`[AudioProcessor] Sending ${samples.length} samples (rms=${rms.toFixed(4)})`);
       setInterimTranscript('…');
 
-      // Send audio Uint8Array directly to main process Whisper engine via IPC
-      const text = await window.api.transcribeChunk(audioBuffer);
-      console.log(`[AudioProcessor] IPC Transcribe Response received: "${text}"`);
-      
+      // Encode raw PCM as a WAV file — main process parses the header to get Int16 samples
+      const wavBuffer = encodeWav(samples, 16000);
+      const wavUint8 = new Uint8Array(wavBuffer);
+
+      const text = await window.api.transcribeChunk(wavUint8);
+      console.log(`[AudioProcessor] Transcribed: "${text}"`);
+
       setInterimTranscript('');
       if (text && text.length > 1 && isRecordingRef.current) {
         if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
         setIsFading(false);
-
         setTranscript(prev => (prev ? prev + ' ' : '') + text);
         triggerAIDetection(text);
-
-        // Disappear subtitle after 7 seconds of inactivity (with fade out animation)
         subtitleTimeoutRef.current = setTimeout(() => {
           setIsFading(true);
           setTimeout(() => {
             setTranscript('');
             setDetectedRefs([]);
             setIsFading(false);
-          }, 500); // 500ms fade transition
-        }, 7000);
+          }, 500);
+        }, 3000);
       }
     } catch (err: any) {
       console.error('[AudioProcessor] Transcription pipeline failed:', err);
@@ -394,7 +439,7 @@ export default function OperatorConsole() {
   const startMicrophone = async () => {
     console.log('[Microphone] Requesting stream access. Target Device ID:', selectedAudioDevice || 'Default');
     try {
-      // ── 1. Get microphone stream ─────────────────────────────
+      // ── 1. Get microphone stream ────────────────────────────────────
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: selectedAudioDevice ? { exact: selectedAudioDevice } : undefined,
@@ -404,89 +449,62 @@ export default function OperatorConsole() {
         }
       });
       audioStreamRef.current = stream;
-      console.log('[Microphone] Stream acquired successfully. Active tracks:', stream.getAudioTracks().map(t => t.label));
+      console.log('[Microphone] Stream acquired. Active tracks:', stream.getAudioTracks().map(t => t.label));
 
-      // Create AudioContext at exactly 16000Hz. This handles sample-rate conversion natively!
+      // AudioContext at exactly 16 kHz so we capture PCM at Whisper's native rate
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       audioContextRef.current = audioCtx;
-      console.log('[Microphone] AudioContext initialized. Sample rate:', audioCtx.sampleRate, 'State:', audioCtx.state);
-      
-      if (audioCtx.state === 'suspended') {
-        console.log('[Microphone] AudioContext is suspended. Resuming...');
-        await audioCtx.resume();
-        console.log('[Microphone] AudioContext resumed. State:', audioCtx.state);
-      }
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
+      console.log('[Microphone] AudioContext sample rate:', audioCtx.sampleRate, 'state:', audioCtx.state);
 
       const source = audioCtx.createMediaStreamSource(stream);
 
-      // ── 2. Setup Analyser Node for VU Meter ──────────────────
+      // ── 2. Analyser for VU meter ─────────────────────────────────────
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
       analyserRef.current = analyser;
-      console.log('[Microphone] AnalyserNode initialized for VU level monitoring.');
 
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      let lastUpdate = 0;
+      let lastVuUpdate = 0;
       const updateMeter = () => {
         if (!analyserRef.current) return;
         analyserRef.current.getByteFrequencyData(dataArray);
         let total = 0;
         for (let i = 0; i < dataArray.length; i++) total += dataArray[i];
-        
         const now = Date.now();
-        if (now - lastUpdate > 100) { // Throttle VU meter React state updates to 10fps
+        if (now - lastVuUpdate > 100) {
           setVuLevel(Math.min(100, Math.round((total / dataArray.length / 128) * 100)));
-          lastUpdate = now;
+          lastVuUpdate = now;
         }
         animationFrameRef.current = requestAnimationFrame(updateMeter);
       };
       updateMeter();
 
-      // ── 3. Setup MediaRecorder for safe out-of-process audio capture ──
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-      mediaRecorderRef.current = mediaRecorder;
-      console.log('[Microphone] MediaRecorder initialized.');
+      // ── 3. AudioWorklet — captures raw PCM in a dedicated audio thread ─────
+      // AudioWorklet runs in AudioWorkletGlobalScope (separate thread from the
+      // renderer), so PCM accumulation never stalls the UI or causes blank screens.
+      pcmBufferRef.current = new Float32Array(0);
 
-      mediaRecorder.ondataavailable = async (event) => {
-        if (!isRecordingRef.current) return;
-        if (event.data && event.data.size > 0) {
-          const blob = event.data;
-          try {
-            const arrayBuffer = await blob.arrayBuffer();
-            const uint8Array = new Uint8Array(arrayBuffer);
-            processAudioChunk(uint8Array);
-          } catch (e) {
-            console.error('[Microphone] Failed to convert recording blob to Uint8Array:', e);
-          }
+      // The worklet script is served from /public in Vite
+      await audioCtx.audioWorklet.addModule('/audio-chunk-processor.js');
+      const workletNode = new AudioWorkletNode(audioCtx, 'audio-chunk-processor');
+      processorRef.current = workletNode as unknown as ScriptProcessorNode;
+
+      workletNode.port.onmessage = (event) => {
+        if (event.data?.type === 'chunk' && isRecordingRef.current) {
+          const samples = new Float32Array(event.data.data);
+          processAudioChunk(samples);
         }
       };
 
-      mediaRecorder.onstop = () => {
-        if (isRecordingRef.current && mediaRecorderRef.current) {
-          try {
-            mediaRecorderRef.current.start();
-          } catch (err) {
-            console.error('[Microphone] Failed to restart MediaRecorder:', err);
-          }
-        }
-      };
+      // Connect: source → worklet → silent sink (no speaker feedback)
+      source.connect(workletNode);
+      workletNode.connect(audioCtx.createMediaStreamDestination());
 
-      // Start recording
-      mediaRecorder.start();
-      console.log('[Microphone] MediaRecorder started.');
-
-      // Periodically stop to flush complete self-contained audio slices
-      const intervalId = setInterval(() => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-          mediaRecorderRef.current.stop();
-        }
-      }, 4000);
-      sliceIntervalRef.current = intervalId;
-
-      addAiLog('success', 'Listening — capturing audio directly via MediaRecorder...');
+      addAiLog('success', 'Listening — capturing raw PCM at 16 kHz…');
     } catch (err: any) {
-      console.error('[Microphone] Failed to initialize microphone or audio context:', err);
+      console.error('[Microphone] Failed to initialize:', err);
       const msg = err?.message ?? String(err);
       addAiLog('error',
         msg.includes('Permission') || msg.includes('NotAllowed') || msg.includes('not allowed')
@@ -501,19 +519,18 @@ export default function OperatorConsole() {
   const stopMicrophone = (isUnmounting: boolean = false) => {
     console.log(`[Microphone] Stopping stream. Is Unmounting: ${isUnmounting}`);
     if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
-    if (sliceIntervalRef.current) {
-      clearInterval(sliceIntervalRef.current);
-      sliceIntervalRef.current = null;
-    }
-    
-    if (mediaRecorderRef.current) {
+
+    // Disconnect AudioWorkletNode and clear PCM buffer
+    if (processorRef.current) {
       try {
-        if (mediaRecorderRef.current.state !== 'inactive') {
-          mediaRecorderRef.current.stop();
-        }
+        // Tell the worklet to stop accumulating before we disconnect
+        (processorRef.current as unknown as AudioWorkletNode).port?.postMessage('stop');
+        processorRef.current.disconnect();
       } catch { /* ignore */ }
-      mediaRecorderRef.current = null;
+      processorRef.current = null;
     }
+    pcmBufferRef.current = new Float32Array(0);
+
     if (audioStreamRef.current) {
       try { audioStreamRef.current.getTracks().forEach(t => t.stop()); } catch { /* ignore */ }
     }
@@ -523,7 +540,13 @@ export default function OperatorConsole() {
     audioStreamRef.current = null;
     audioContextRef.current = null;
     analyserRef.current = null;
-    
+
+    // Cancel any pending debounced scripture detection
+    if (detectDebounceRef.current) {
+      clearTimeout(detectDebounceRef.current);
+      detectDebounceRef.current = null;
+    }
+
     if (!isUnmounting) {
       setVuLevel(0);
       setInterimTranscript('');
@@ -547,14 +570,24 @@ export default function OperatorConsole() {
   };
 
   const triggerAIDetection = (newText: string) => {
-    // Maintain a rolling window of the last ~40 words for richer context
+    // Maintain a rolling window of the last ~80 words for richer context.
+    // 80 words covers ~30-40 seconds of speech, ensuring that references
+    // split across 4-second chunk boundaries are both present before detection fires.
     const incoming = newText.trim().split(/\s+/).filter(Boolean);
-    rollingWindowRef.current = [...rollingWindowRef.current, ...incoming].slice(-40);
+    rollingWindowRef.current = [...rollingWindowRef.current, ...incoming].slice(-80);
 
     if (!window.api) return;
-    const chunk = rollingWindowRef.current.join(' ');
-    if (chunk.length < 5) return;
-    window.api.sendTranscript(chunk);
+
+    // Debounce the actual sendTranscript call by 150ms.
+    // If a second chunk arrives quickly (e.g., both halves of a split sentence
+    // finish transcribing close together), we wait for both to land in the
+    // rolling window before firing scripture detection — preventing a miss.
+    if (detectDebounceRef.current) clearTimeout(detectDebounceRef.current);
+    detectDebounceRef.current = setTimeout(() => {
+      const chunk = rollingWindowRef.current.join(' ');
+      if (chunk.length < 5) return;
+      window.api.sendTranscript(chunk);
+    }, 150);
   };
 
   const handleManualSearch = async (e: React.FormEvent) => {
@@ -821,18 +854,77 @@ export default function OperatorConsole() {
                 : <><Mic className="w-4 h-4 animate-pulse" /><span>Start Listening [Space]</span></>
               }
             </button>
-            {/* Speech engine status strip */}
-            {speechEngineStatus !== 'ready' && speechEngineStatus !== 'idle' && !isRecording && (
-              <div className={`text-[10px] text-center rounded px-2 py-1 ${
-                speechEngineStatus === 'error'
-                  ? 'bg-destructive/10 text-destructive'
-                  : 'bg-primary/10 text-primary'
-              }`}>
-                {speechEngineStatus === 'downloading' && '⬇ Downloading speech model (~150MB, one-time)…'}
-                {speechEngineStatus === 'loading' && '⌛ Loading speech model…'}
-                {speechEngineStatus === 'error' && '⚠ Speech model failed — check AI Logs'}
-              </div>
-            )}
+            {/* Speech engine progress card */}
+            {speechEngineStatus !== 'ready' && speechEngineStatus !== 'idle' && !isRecording && (() => {
+              // Parse percentage from detail strings like "Downloading model: 63%"
+              const pctMatch = modelProgressDetail.match(/(\d+)%/);
+              const pct = pctMatch ? parseInt(pctMatch[1], 10) : null;
+
+              const isError = speechEngineStatus === 'error';
+              const isLoading = speechEngineStatus === 'loading';
+              const isDownloading = speechEngineStatus === 'downloading';
+
+              return (
+                <div className={`rounded-lg border px-3 py-2.5 text-xs space-y-1.5 ${
+                  isError
+                    ? 'border-destructive/40 bg-destructive/10'
+                    : 'border-primary/20 bg-primary/5'
+                }`}>
+                  {/* Header row */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      {isError && <span className="text-destructive">⚠</span>}
+                      {isLoading && (
+                        <svg className="w-3 h-3 animate-spin text-primary" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                        </svg>
+                      )}
+                      {isDownloading && <span className="text-primary">⬇</span>}
+                      <span className={isError ? 'text-destructive' : 'text-foreground'}>
+                        {isError ? 'Speech engine error' : isLoading ? 'Loading into memory…' : 'Downloading speech model'}
+                      </span>
+                    </div>
+                    {pct !== null && (
+                      <span className="font-mono font-bold text-primary tabular-nums">{pct}%</span>
+                    )}
+                  </div>
+
+                  {/* Detail text */}
+                  {modelProgressDetail && (
+                    <p className={`text-[10px] truncate ${isError ? 'text-destructive/80' : 'text-muted-foreground'}`}>
+                      {modelProgressDetail}
+                    </p>
+                  )}
+
+                  {/* Progress bar */}
+                  {(isDownloading || isLoading) && (
+                    <div className="w-full h-1.5 bg-primary/15 rounded-full overflow-hidden">
+                      {pct !== null ? (
+                        <div
+                          className="h-full bg-primary rounded-full transition-all duration-500 ease-out"
+                          style={{ width: `${pct}%` }}
+                        />
+                      ) : (
+                        /* Indeterminate shimmer when no % available */
+                        <div className="h-full w-1/3 bg-primary rounded-full animate-[shimmer_1.5s_ease-in-out_infinite]"
+                          style={{
+                            background: 'linear-gradient(90deg, transparent, hsl(var(--primary)), transparent)',
+                            animation: 'shimmer 1.5s ease-in-out infinite',
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* One-time note */}
+                  {isDownloading && (
+                    <p className="text-[9px] text-muted-foreground/60">~290 MB · one-time download · cached locally after this</p>
+                  )}
+                </div>
+              );
+            })()}
+
           </div>
           <div className="flex-grow p-5 flex flex-col overflow-hidden">
             <div className="flex justify-between items-center mb-3">

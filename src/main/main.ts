@@ -13,6 +13,7 @@ import { detectScriptureReferencesOffline, formatScripturesInText } from './scri
 import { exportSessionPdf, ExportedVerse } from './pdf-export';
 import { dialog } from 'electron';
 import { downloadOpenSourceTranslation, importLocalFile } from './translation-manager';
+import { initSpeechEngine, transcribeChunk, isSpeechEngineReady } from './speech-engine';
 
 // Load .env — works in dev (project root) and in packaged builds (resources folder)
 loadDotEnv({ path: join(app.isPackaged ? process.resourcesPath : process.cwd(), '.env') });
@@ -452,71 +453,119 @@ function setupIpcHandlers() {
     handleClearProject();
   });
 
-  // ── OpenAI Whisper Cloud Speech Engine ──────────────────────────────────────
+  // ── Offline Whisper Speech Engine (falls back to Groq if key is set) ────────
 
-  // Stub initialisation: cloud STT is always ready
+  // Initialise the local Whisper pipeline and relay progress events to the renderer
   ipcMain.handle('speech:init', async (event) => {
-    console.log('[speech:init] stub initializing...');
-    if (!event.sender.isDestroyed()) {
-      event.sender.send('speech:init-progress', { status: 'ready', detail: 'OpenAI Whisper Cloud STT ready.' });
-    }
-    return true;
+    console.log('[speech:init] starting offline Whisper engine…');
+
+    const ok = await initSpeechEngine((status, detail) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send('speech:init-progress', { status, detail });
+      }
+    });
+
+    return ok;
   });
 
-  // Transcribe one audio chunk (WAV buffer) via Groq Whisper API
+  // Transcribe one audio chunk.
+  // Strategy: use offline Whisper first; fall back to Groq only when a key is
+  // configured AND the local engine is not yet ready.
+  // The renderer now always sends a proper WAV (44-byte header + Int16 LE PCM).
   ipcMain.handle('speech:transcribe-chunk', async (_, wavBuffer: Uint8Array) => {
     console.log(`[transcribe] chunk received: ${wavBuffer?.length ?? 0} bytes`);
-    
+
+    // Known Whisper hallucinations on silence / background noise — discard these.
+    const HALLUCINATION_RE = /^\s*\*[^*]*\*?\s*$|^\s*\[(?:BLANK_AUDIO|silence|Silence|inaudible|Inaudible)[^\]]*\]\s*$/i;
+    const cleanTranscript = (raw: string): string => {
+      const t = raw.trim();
+      if (!t || t.length <= 2) return '';              // bare *, **, punctuation noise
+      if (HALLUCINATION_RE.test(t)) return '';
+      if (/^[\s\W]+$/.test(t)) return '';              // all whitespace / punctuation
+      return t;
+    };
+
+    // ── Parse WAV header to locate Int16 PCM data ─────────────────────────
+    // WAV layout: bytes 0-3 "RIFF", data starts at byte 44.
+    const parsePcmFromWav = (buf: Uint8Array): number[] => {
+      if (buf.length < 44) return [];
+      const view = new DataView(buf.buffer as ArrayBuffer, buf.byteOffset, buf.byteLength);
+      const riff = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
+      if (riff !== 'RIFF') {
+        console.warn('[transcribe] Buffer is not a WAV file, attempting raw Int16 parse');
+        const samples: number[] = [];
+        for (let i = 0; i + 1 < view.byteLength; i += 2) samples.push(view.getInt16(i, true));
+        return samples;
+      }
+      // Skip 44-byte standard WAV header
+      const samples: number[] = [];
+      for (let i = 44; i + 1 < view.byteLength; i += 2) {
+        samples.push(view.getInt16(i, true));
+      }
+      return samples;
+    };
+
+    // ── 1. Offline path (preferred) ──────────────────────────────────────────
+    if (isSpeechEngineReady()) {
+      const samples = parsePcmFromWav(wavBuffer);
+      if (samples.length > 0) {
+        const raw = await transcribeChunk(samples);
+        const text = cleanTranscript(raw);
+        if (text) {
+          const formatted = formatScripturesInText(text);
+          console.log(`[transcribe:offline] "${formatted}"`);
+          return formatted;
+        }
+        return '';
+      }
+    }
+
+    // ── 2. Groq cloud fallback (only when key is configured) ─────────────────
     const groqApiKey = (process.env.GROQ_API_KEY || store.get('groqApiKey') || '') as string;
     if (!groqApiKey.trim()) {
-      console.warn('[transcribe] Groq API key is missing.');
-      return '[Error: Please configure your Groq API Key in Settings to transcribe speech]';
+      console.warn('[transcribe] Offline engine not ready and no Groq API key configured.');
+      return '';
     }
 
     try {
-      // Create a native Blob from the Uint8Array buffer (received as WebM from MediaRecorder)
-      const blob = new Blob([wavBuffer.buffer as ArrayBuffer], { type: 'audio/webm' });
-      
+      // Send WAV directly — Groq accepts wav and it's what the renderer now sends
+      const blob = new Blob([wavBuffer.buffer as ArrayBuffer], { type: 'audio/wav' });
       const formData = new FormData();
-      formData.append('file', blob, 'audio.webm');
+      formData.append('file', blob, 'audio.wav');
       formData.append('model', 'whisper-large-v3');
       formData.append('language', 'en');
 
       const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${groqApiKey}`
-        },
+        headers: { 'Authorization': `Bearer ${groqApiKey}` },
         body: formData
       });
 
       if (!response.ok) {
         const errText = await response.text();
-        console.error('[transcribe] Groq API error response:', errText);
+        console.error('[transcribe:groq] error:', errText);
         try {
           const parsed = JSON.parse(errText);
-          if (parsed?.error?.message) {
-            return `[Groq Error: ${parsed.error.message}]`;
-          }
-        } catch (e) {
-          // Ignore JSON parse error
-        }
-        return `[Error from Groq API: ${response.statusText}]`;
+          if (parsed?.error?.message) return `[Groq Error: ${parsed.error.message}]`;
+        } catch { /* ignore */ }
+        return `[Groq API Error: ${response.statusText}]`;
       }
 
       const data: any = await response.json();
-      let text = (data?.text ?? '').trim();
+      const raw = (data?.text ?? '').trim();
+      const text = cleanTranscript(raw);
       if (text) {
-        console.log(`[transcribe] result: "${text}"`);
-        text = formatScripturesInText(text);
-        console.log(`[transcribe] formatted: "${text}"`);
+        const formatted = formatScripturesInText(text);
+        console.log(`[transcribe:groq] "${formatted}"`);
+        return formatted;
       }
-      return text;
+      return '';
     } catch (e: any) {
-      console.error('[transcribe] request error:', e);
-      return `[Transcription Connection Error: ${e.message ?? e}]`;
+      console.error('[transcribe:groq] request error:', e);
+      return `[Transcription Error: ${e.message ?? e}]`;
     }
   });
+
 
   // ── AI Scripture Detection ─────────────────────────────────────────────────
 

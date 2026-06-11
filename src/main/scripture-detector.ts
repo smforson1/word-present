@@ -121,8 +121,8 @@ const BOOK_PATTERN = `\\b(?:${BOOK_NAMES_UNION})\\b`;
 
 // Chapter:Verse or Chapter Verse (with optional verse range)
 const CHAP_VERSE_COLON = `(\\d{1,3}):(\\d{1,3})(?:\\s*[-–through]+\\s*(\\d{1,3}))?`;
-const CHAP_VERSE_WORDS = `chapter\\s+(\\d{1,3})(?:(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse|verses)\\s*|\\s*[,;]\\s*(?:verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?)?`;
-const CHAP_VERSE_SPACE = `(\\d{1,3})(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse|verses)\\s*|\\s*[,;]\\s*(?:verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?`;
+const CHAP_VERSE_WORDS = `chapter\\s+(\\d{1,3})(?:(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse\\s+number|verse|verses)\\s*|\\s*[,;]\\s*(?:verse\\s+number|verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?)?`;
+const CHAP_VERSE_SPACE = `(\\d{1,3})(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse\\s+number|verse|verses)\\s*|\\s*[,;]\\s*(?:verse\\s+number|verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?`;
 
 // Full patterns — ordered most-specific to least-specific
 const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' }> = [

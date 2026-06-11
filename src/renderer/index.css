@@ -198,3 +198,9 @@
   background-size: 400% 400%;
   animation: wave-golden 16s ease infinite;
 }
+
+/* ── Model download shimmer bar ── */
+@keyframes shimmer {
+  0%   { transform: translateX(-200%); }
+  100% { transform: translateX(400%); }
+}

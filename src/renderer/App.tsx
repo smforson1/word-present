@@ -4,7 +4,10 @@ import ProjectionScreen from './components/ProjectionScreen';
 import MobileRemote from './components/MobileRemote';
 
 export default function App() {
-  const [view, setView] = useState<string>('operator');
+  // Start as null — render nothing until we know which view we are.
+  // This prevents OperatorConsole from ever mounting in the projection window,
+  // which would trigger a spurious second speech:init call.
+  const [view, setView] = useState<string | null>(null);
 
   useEffect(() => {
     // Read route parameter
@@ -37,6 +40,9 @@ export default function App() {
       return unsubscribe;
     }
   }, []);
+
+  // Don't render anything until the view has been determined from the URL.
+  if (view === null) return null;
 
   switch (view) {
     case 'projection':

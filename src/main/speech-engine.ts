@@ -1,6 +1,6 @@
 /**
  * Offline Speech-to-Text Engine
- * Uses @xenova/transformers (Whisper tiny.en) — pure WASM, zero internet at runtime.
+ * Uses @xenova/transformers (Whisper base.en) — pure WASM, zero internet at runtime.
  *
  * Audio input: Float32Array PCM at 16kHz, decoded in the renderer where AudioContext
  * is available, then passed here as a plain number[] over IPC.
@@ -39,7 +39,7 @@ export async function initSpeechEngine(onProgress: TranscribeProgress): Promise<
   pipelineLoading = true;
 
   try {
-    onProgress('downloading', 'Downloading Whisper tiny.en model (~150MB, one-time)…');
+    onProgress('downloading', 'Downloading Whisper base.en model (~290MB, one-time)…');
 
     const { pipeline: createPipeline, env } = await import('@xenova/transformers');
     env.cacheDir = MODEL_CACHE_DIR;
@@ -47,7 +47,7 @@ export async function initSpeechEngine(onProgress: TranscribeProgress): Promise<
 
     pipeline = await createPipeline(
       'automatic-speech-recognition',
-      'Xenova/whisper-tiny.en',
+      'Xenova/whisper-base.en',
       {
         progress_callback: (progress: any) => {
           if (progress.status === 'downloading') {
@@ -63,7 +63,7 @@ export async function initSpeechEngine(onProgress: TranscribeProgress): Promise<
     );
 
     pipelineReady = true;
-    onProgress('ready', 'Whisper model ready — offline transcription active.');
+    onProgress('ready', 'Whisper base.en ready — fully offline, no internet required.');
   } catch (err: any) {
     onProgress('error', `Failed to load Whisper model: ${err?.message ?? err}`);
     pipelineReady = false;
