@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // Translations
   getTranslations: () => ipcRenderer.invoke('db:get-translations'),
+  getTranslationCatalog: () => ipcRenderer.invoke('translations:get-catalog'),
   downloadTranslation: (code: string, url: string) => ipcRenderer.invoke('translations:download', code, url),
   importTranslationFile: (code: string) => ipcRenderer.invoke('translations:import-file', code),
   deleteTranslation: (code: string) => ipcRenderer.invoke('translations:delete', code),
@@ -38,6 +39,8 @@ contextBridge.exposeInMainWorld('api', {
   // Offline Speech Engine
   initSpeechEngine: () => ipcRenderer.invoke('speech:init'),
   transcribeChunk: (wavBuffer: Uint8Array) => ipcRenderer.invoke('speech:transcribe-chunk', wavBuffer),
+  getSpeechModelsStatus: () => ipcRenderer.invoke('speech:get-models-status'),
+  deleteSpeechModel: (modelName: string) => ipcRenderer.invoke('speech:delete-model', modelName),
   onSpeechInitProgress: (callback: (event: any, data: { status: string; detail?: string }) => void) => {
     ipcRenderer.on('speech:init-progress', callback);
     return () => ipcRenderer.removeListener('speech:init-progress', callback);

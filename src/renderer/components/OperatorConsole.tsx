@@ -82,6 +82,8 @@ export default function OperatorConsole() {
   const [apiKey, setApiKey] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
   const [translation, setTranslation] = useState('KJV');
+  const [secondaryTranslation, setSecondaryTranslation] = useState('');
+  const [isDualProjectionEnabled, setIsDualProjectionEnabled] = useState(false);
   const [availableTranslations, setAvailableTranslations] = useState<{translation: string, verseCount: number}[]>([]);
   const [fontSizeScale, setFontSizeScale] = useState(1.0);
   const [isDarkMode, setIsDarkMode] = useState(true);
@@ -114,10 +116,49 @@ export default function OperatorConsole() {
   const [detectedRefs, setDetectedRefs] = useState<string[]>([]);
   const [speechEngineStatus, setSpeechEngineStatus] = useState<'idle' | 'downloading' | 'loading' | 'ready' | 'error'>('idle');
   const [modelProgressDetail, setModelProgressDetail] = useState('');
+  const [speechModelsStatus, setSpeechModelsStatus] = useState<{ downloaded: string[]; activeModel: string }>({
+    downloaded: [],
+    activeModel: 'Xenova/whisper-base.en'
+  });
   const [aiLogs, setAiLogs] = useState<AILogItem[]>([]);
-  const [activeProjected, setActiveProjected] = useState<{ reference: string; text: string; translation: string } | null>(null);
+  const [activeProjected, setActiveProjected] = useState<{ reference: string; text: string; translation: string; secondaryText?: string; secondaryTranslation?: string; slideType?: string; preset?: any } | null>(null);
   const [blackout, setBlackout] = useState(false);
-  const [aiSuggestion, setAiSuggestion] = useState<{ reference: string; text: string; translation: string } | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<{ reference: string; text: string; translation: string; secondaryText?: string; secondaryTranslation?: string; slideType?: string; preset?: any } | null>(null);
+
+  // Style Presets State
+  const [presetScripture, setPresetScripture] = useState<any>(null);
+  const [presetSong, setPresetSong] = useState<any>(null);
+  const [presetAnnouncement, setPresetAnnouncement] = useState<any>(null);
+  const [presetCustom, setPresetCustom] = useState<any>(null);
+  const [editingPresetCategory, setEditingPresetCategory] = useState<'scripture' | 'song' | 'announcement' | 'custom'>('scripture');
+
+  // Noise Gate State
+  const [isNoiseGateEnabled, setIsNoiseGateEnabledState] = useState(true);
+  const [noiseGateThreshold, setNoiseGateThresholdState] = useState(0.003);
+  const isNoiseGateEnabledRef = useRef(true);
+  const noiseGateThresholdRef = useRef(0.003);
+
+  const setIsNoiseGateEnabled = (val: boolean) => {
+    setIsNoiseGateEnabledState(val);
+    isNoiseGateEnabledRef.current = val;
+    if (window.api) window.api.setSettings('isNoiseGateEnabled', val);
+  };
+
+  const setNoiseGateThreshold = (val: number) => {
+    setNoiseGateThresholdState(val);
+    noiseGateThresholdRef.current = val;
+    if (window.api) window.api.setSettings('noiseGateThreshold', val);
+  };
+
+  // Translation Catalog State
+  const [catalog, setCatalog] = useState<{ code: string; name: string; url: string; isInstalled: boolean }[]>([]);
+
+  const refreshCatalog = () => {
+    if (!window.api || !window.api.getTranslationCatalog) return;
+    window.api.getTranslationCatalog()
+      .then(setCatalog)
+      .catch(err => console.error('[Console] Failed to load translation catalog:', err));
+  };
 
   // Manual Control State
   const [manualReference, setManualReference] = useState('');
@@ -149,6 +190,48 @@ export default function OperatorConsole() {
   const subtitleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const detectDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
+  const loadSpeechModelsStatus = () => {
+    if (!window.api || !window.api.getSpeechModelsStatus) return;
+    window.api.getSpeechModelsStatus()
+      .then(setSpeechModelsStatus)
+      .catch(err => console.error('[Console] Failed to fetch cached models list:', err));
+  };
+
+  const handleSelectSpeechModel = async (modelName: string) => {
+    if (!window.api) return;
+    await window.api.setSettings('selectedSpeechModel', modelName);
+    setSpeechModelsStatus(prev => ({ ...prev, activeModel: modelName }));
+    addAiLog('info', `Switched active Whisper model to ${modelName}. Re-initializing engine…`);
+
+    setSpeechEngineStatus('loading');
+    window.api.initSpeechEngine().then((ready: boolean) => {
+      if (ready) {
+        setSpeechEngineStatus('ready');
+        loadSpeechModelsStatus();
+      } else {
+        setSpeechEngineStatus('error');
+        addAiLog('error', 'Failed to initialize the new speech model.');
+      }
+    }).catch((err: any) => {
+      setSpeechEngineStatus('error');
+      addAiLog('error', `Speech engine swap failed: ${err?.message ?? err}`);
+    });
+  };
+
+  const handleDeleteSpeechModel = async (modelName: string) => {
+    if (!window.api || !window.api.deleteSpeechModel) return;
+    if (confirm(`Delete local speech model files for ${modelName}?`)) {
+      addAiLog('info', `Deleting model files for ${modelName}...`);
+      const ok = await window.api.deleteSpeechModel(modelName);
+      if (ok) {
+        addAiLog('success', `Deleted speech model ${modelName}.`);
+        loadSpeechModelsStatus();
+      } else {
+        addAiLog('error', `Could not delete speech model ${modelName}.`);
+      }
+    }
+  };
+
   useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
@@ -160,6 +243,8 @@ export default function OperatorConsole() {
       setApiKey(settings.anthropicApiKey || '');
       setGroqApiKey(settings.groqApiKey || '');
       setTranslation(settings.selectedTranslation || 'KJV');
+      setSecondaryTranslation(settings.secondaryTranslation || '');
+      setIsDualProjectionEnabled(settings.isDualProjectionEnabled || false);
       setFontSizeScale(settings.fontSizeScale || 1.0);
       setIsDarkMode(settings.theme === 'dark');
       setWhisperUrl(settings.whisperUrl || 'http://localhost:8080');
@@ -170,13 +255,37 @@ export default function OperatorConsole() {
       setProjectionFontFamily(settings.projectionFontFamily || 'serif');
       setShowVerseNumbers(settings.showVerseNumbers || false);
       setAiMode(settings.aiMode || 'auto-project');
+      if (settings.selectedSpeechModel) {
+        setSpeechModelsStatus(prev => ({ ...prev, activeModel: settings.selectedSpeechModel }));
+      }
+      
+      // Load presets
+      if (settings.preset_scripture) setPresetScripture(settings.preset_scripture);
+      if (settings.preset_song) setPresetSong(settings.preset_song);
+      if (settings.preset_announcement) setPresetAnnouncement(settings.preset_announcement);
+      if (settings.preset_custom) setPresetCustom(settings.preset_custom);
+
+      // Load Noise Gate settings
+      const noiseGateOn = settings.isNoiseGateEnabled !== undefined ? settings.isNoiseGateEnabled : true;
+      setIsNoiseGateEnabledState(noiseGateOn);
+      isNoiseGateEnabledRef.current = noiseGateOn;
+
+      const noiseGateVal = settings.noiseGateThreshold !== undefined ? settings.noiseGateThreshold : 0.003;
+      setNoiseGateThresholdState(noiseGateVal);
+      noiseGateThresholdRef.current = noiseGateVal;
     });
 
-    window.api.getTranslations().then(setAvailableTranslations);
+    window.api.getTranslations().then((trans) => {
+      setAvailableTranslations(trans);
+      refreshCatalog();
+    });
 
     // Check if API keys are configured via .env (without exposing them to the UI)
     window.api.hasEnvKey().then(setEnvKeyActive);
     window.api.hasGroqEnvKey().then(setGroqEnvKeyActive);
+    
+    // Load local speech models list
+    loadSpeechModelsStatus();
 
     // Initialize Whisper speech engine via main process IPC
     let unsubProgress: (() => void) | null = null;
@@ -200,6 +309,7 @@ export default function OperatorConsole() {
           setSpeechEngineStatus('ready');
           setModelProgressDetail('');
           addAiLog('success', detail ?? 'Offline speech model ready — click Start Listening to begin.');
+          loadSpeechModelsStatus();
         } else if (status === 'error') {
           setSpeechEngineStatus('error');
           setModelProgressDetail(detail ?? 'Speech model failed to load.');
@@ -210,6 +320,7 @@ export default function OperatorConsole() {
       window.api.initSpeechEngine().then((ready: boolean) => {
         if (ready) {
           setSpeechEngineStatus('ready');
+          loadSpeechModelsStatus();
         } else {
           setSpeechEngineStatus('error');
           addAiLog('error', 'Speech engine initialization returned false.');
@@ -285,6 +396,10 @@ export default function OperatorConsole() {
   }, []);
 
   useEffect(() => {
+    refreshCatalog();
+  }, [availableTranslations]);
+
+  useEffect(() => {
     if (isRecording && selectedAudioDevice) {
       console.log('[Microphone] Active device changed, restarting stream...');
       stopMicrophone();
@@ -327,7 +442,7 @@ export default function OperatorConsole() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [blackout, activeProjected]); // remove isRecording to avoid stale closure if not using ref properly. Space uses toggleMicrophone which we must ensure uses ref.
 
-  // Live update projection when translation or showVerseNumbers changes
+  // Live update projection when translation, dual-translation, or showVerseNumbers changes
   useEffect(() => {
     if (!window.api || !activeProjected) return;
 
@@ -346,14 +461,11 @@ export default function OperatorConsole() {
         if (verses.length > 0) {
           const textCombined = verses.map((v: any) => showVerseNumbers ? `[${v.verse}] ${v.text}` : v.text).join(' ');
           const refFormatted = `${parsed.book} ${parsed.chapter}:${parsed.verseStart || 1}${parsed.verseEnd ? '-' + parsed.verseEnd : ''} (${translation})`;
-          
-          if (refFormatted !== activeProjected.reference || textCombined !== activeProjected.text) {
-            project(refFormatted, textCombined);
-          }
+          project(refFormatted, textCombined);
         }
       }
     });
-  }, [translation, showVerseNumbers]);
+  }, [translation, secondaryTranslation, isDualProjectionEnabled, showVerseNumbers]);
 
   const addAiLog = (type: 'info' | 'success' | 'warning' | 'error', message: string) => {
     setAiLogs(prev => [{
@@ -399,8 +511,8 @@ export default function OperatorConsole() {
       let rms = 0;
       for (let i = 0; i < samples.length; i++) rms += samples[i] * samples[i];
       rms = Math.sqrt(rms / samples.length);
-      if (rms < 0.003) {
-        console.log(`[AudioProcessor] Chunk too quiet (rms=${rms.toFixed(4)}), skipping.`);
+      if (isNoiseGateEnabledRef.current && rms < noiseGateThresholdRef.current) {
+        console.log(`[AudioProcessor] Chunk too quiet (rms=${rms.toFixed(4)} < threshold=${noiseGateThresholdRef.current}), skipping.`);
         return;
       }
 
@@ -613,8 +725,86 @@ export default function OperatorConsole() {
     }
   };
 
-  const project = (reference: string, text: string) => {
-    window.api.forceProject({ reference, text, translation });
+  const project = async (reference: string, text: string, slideType?: 'scripture' | 'song' | 'announcement' | 'custom') => {
+    const finalType = slideType || 'scripture';
+    
+    // Resolve active style preset
+    let activePreset = presetScripture;
+    if (finalType === 'song') activePreset = presetSong;
+    else if (finalType === 'announcement') activePreset = presetAnnouncement;
+    else if (finalType === 'custom') activePreset = presetCustom;
+
+    let finalPayload: any = { 
+      reference, 
+      text, 
+      translation,
+      slideType: finalType,
+      preset: activePreset
+    };
+
+    if (finalType === 'scripture' && isDualProjectionEnabled && secondaryTranslation && secondaryTranslation !== translation) {
+      // Strip translation suffix like "Genesis 1:1 (KJV)" -> "Genesis 1:1"
+      const cleanRef = reference.replace(/\s*\([^)]*\)\s*$/, '');
+      try {
+        const parsed = await window.api.parseReference(cleanRef);
+        if (parsed) {
+          const verses = await window.api.queryVerses({
+            translation: secondaryTranslation,
+            book: parsed.book,
+            chapter: parsed.chapter,
+            verseStart: parsed.verseStart,
+            verseEnd: parsed.verseEnd
+          });
+          if (verses.length > 0) {
+            const secondaryText = verses.map((v: any) => showVerseNumbers ? `[${v.verse}] ${v.text}` : v.text).join(' ');
+            finalPayload.secondaryText = secondaryText;
+            finalPayload.secondaryTranslation = secondaryTranslation;
+          }
+        }
+      } catch (err) {
+        console.error('[Console] Failed to resolve secondary translation:', err);
+      }
+    }
+
+    window.api.forceProject(finalPayload);
+  };
+
+  const defaultPreset = {
+    fontSizeScale: 1.0,
+    projectionBgMode: 'global' as 'global' | 'color' | 'image' | 'gradient',
+    projectionBgColor: '#000000',
+    projectionBgGradient: 'twilight',
+    projectionBgImage: '',
+    projectionFontFamily: 'serif'
+  };
+
+  const updatePresetField = async (field: string, value: any) => {
+    const key = `preset_${editingPresetCategory}`;
+    const setter = 
+      editingPresetCategory === 'scripture' ? setPresetScripture :
+      editingPresetCategory === 'song' ? setPresetSong :
+      editingPresetCategory === 'announcement' ? setPresetAnnouncement :
+      setPresetCustom;
+
+    const current = 
+      editingPresetCategory === 'scripture' ? presetScripture :
+      editingPresetCategory === 'song' ? presetSong :
+      editingPresetCategory === 'announcement' ? presetAnnouncement :
+      presetCustom;
+
+    const currentObj = current || defaultPreset;
+    const updated = { ...currentObj, [field]: value };
+    
+    setter(updated);
+    if (window.api) {
+      await window.api.setSettings(key as any, updated);
+      
+      // If we are currently projecting a slide of this category, update projection payload
+      if (activeProjected && activeProjected.slideType === editingPresetCategory) {
+        const updatedPayload = { ...activeProjected, preset: updated };
+        window.api.forceProject(updatedPayload);
+      }
+    }
   };
 
   const handleAdjacentVerse = async (direction: 'next' | 'prev') => {
@@ -843,6 +1033,53 @@ export default function OperatorConsole() {
                 })}
               </div>
             </div>
+
+            {/* Noise Gate Controls */}
+            <div className="space-y-2 pt-2 border-t border-border/50">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-muted-foreground font-semibold">Audio Noise Gate</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isNoiseGateEnabled}
+                    onChange={(e) => setIsNoiseGateEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+
+              {isNoiseGateEnabled && (
+                <div className="space-y-1 animate-in slide-in-from-top-1 duration-150">
+                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      Gate Status: 
+                      {vuLevel > (noiseGateThreshold * 5000) ? (
+                        <span className="text-emerald-500 font-bold flex items-center gap-0.5 animate-pulse">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          Open
+                        </span>
+                      ) : (
+                        <span className="text-zinc-500 font-semibold flex items-center gap-0.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
+                          Muted
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-mono text-[9px] bg-muted px-1 rounded">Thresh: {noiseGateThreshold.toFixed(4)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.0005"
+                    max="0.0150"
+                    step="0.0005"
+                    value={noiseGateThreshold}
+                    onChange={(e) => setNoiseGateThreshold(parseFloat(e.target.value))}
+                    className="w-full accent-primary h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              )}
+            </div>
             <button
               onClick={toggleMicrophone}
               className={`w-full py-2.5 rounded-md font-semibold text-sm flex items-center justify-center gap-2 transition-all ${
@@ -963,76 +1200,127 @@ export default function OperatorConsole() {
         <div className="flex-grow bg-background flex flex-col overflow-hidden border-r border-border">
           {/* Mini Projector Preview */}
           <div className="p-4 border-b border-border flex flex-col gap-3 shrink-0">
-            <div className="relative aspect-video w-full max-w-[480px] mx-auto bg-black text-white rounded-lg border border-border flex flex-col justify-between p-3 select-none overflow-hidden"
-                 style={{ backgroundColor: projectionBgColor }}>
-              {/* Background Image Layer inside Preview */}
-              {projectionBgMode === 'image' && projectionBgImage && (
-                <div 
-                  className="absolute inset-0 bg-cover bg-center transition-all duration-500 z-0 pointer-events-none"
-                  style={{ backgroundImage: `url(${projectionBgImage})` }}
-                >
-                  <div className="absolute inset-0 bg-black/45" />
-                </div>
-              )}
-              {/* Animated HSL Gradient Layer inside Preview */}
-              {projectionBgMode === 'gradient' && (
-                <div 
-                  className={`absolute inset-0 transition-all duration-500 z-0 pointer-events-none ${
-                    projectionBgGradient === 'twilight' ? 'gradient-twilight' :
-                    projectionBgGradient === 'aurora' ? 'gradient-aurora' :
-                    projectionBgGradient === 'forest' ? 'gradient-forest' :
-                    projectionBgGradient === 'golden' ? 'gradient-golden' : ''
-                  }`}
-                >
-                  <div className="absolute inset-0 bg-black/20" />
-                </div>
-              )}
-              {blackout && (
-                <div className="absolute inset-0 bg-black z-20 flex items-center justify-center border-4 border-destructive rounded-lg">
-                  <div className="text-center text-destructive font-extrabold uppercase tracking-widest"><AlertTriangle className="w-8 h-8 mx-auto mb-1" /> BLACKOUT</div>
-                </div>
-              )}
-              {activeProjected ? (
-                <div className="flex flex-col h-full justify-between z-10 relative">
-                  <div className="flex justify-between items-center text-[10px] opacity-55 border-b border-white/20 pb-1 font-bold">
-                    <div className="flex items-center gap-1.5">
-                      <img src="favicon.ico" alt="" className="w-3.5 h-3.5 object-contain" />
-                      <span>PRESENTER</span>
-                    </div>
-                    <span>{activeProjected.translation}</span>
-                  </div>
-                  <div className="flex-grow flex items-center justify-center px-4">
-                    <p
-                      className="text-center text-sm font-medium"
-                      style={{
-                        fontFamily:
-                          projectionFontFamily === 'cinzel'           ? '"Cinzel", serif' :
-                          projectionFontFamily === 'eb-garamond'      ? '"EB Garamond", serif' :
-                          projectionFontFamily === 'lora'             ? '"Lora", serif' :
-                          projectionFontFamily === 'playfair-display' ? '"Playfair Display", serif' :
-                          projectionFontFamily === 'raleway'          ? '"Raleway", sans-serif' :
-                          projectionFontFamily === 'inter'            ? '"Inter", sans-serif' :
-                          projectionFontFamily === 'sans-serif'       ? 'system-ui, sans-serif' :
-                          'Georgia, serif',
-                        fontStyle:
-                          projectionFontFamily === 'raleway' ||
-                          projectionFontFamily === 'inter' ||
-                          projectionFontFamily === 'cinzel' ||
-                          projectionFontFamily === 'sans-serif'
-                            ? 'normal' : 'italic'
-                      }}
+            {(() => {
+              const activePreset = activeProjected?.preset;
+              const useGlobalBg = !activePreset?.projectionBgMode || activePreset.projectionBgMode === 'global';
+              const previewBgMode = useGlobalBg ? projectionBgMode : activePreset.projectionBgMode;
+              const previewBgColor = useGlobalBg ? projectionBgColor : activePreset.projectionBgColor;
+              const previewBgImage = useGlobalBg ? projectionBgImage : (activePreset.projectionBgImage || projectionBgImage);
+              const previewBgGradient = useGlobalBg ? projectionBgGradient : activePreset.projectionBgGradient;
+              const previewFontFamily = activePreset?.projectionFontFamily ?? projectionFontFamily;
+              const previewFontSizeScale = activePreset?.fontSizeScale ?? fontSizeScale;
+
+              return (
+                <div className="relative aspect-video w-full max-w-[480px] mx-auto bg-black text-white rounded-lg border border-border flex flex-col justify-between p-3 select-none overflow-hidden"
+                     style={{ backgroundColor: previewBgColor }}>
+                  {/* Background Image Layer inside Preview */}
+                  {previewBgMode === 'image' && previewBgImage && (
+                    <div 
+                      className="absolute inset-0 bg-cover bg-center transition-all duration-500 z-0 pointer-events-none"
+                      style={{ backgroundImage: `url(${previewBgImage})` }}
                     >
-                      &ldquo;{activeProjected.text}&rdquo;
-                    </p>
-                  </div>
-                  <div className="flex justify-center border-t border-white/20 pt-1 text-[11px] font-bold text-gold">
-                    {activeProjected.reference}
-                  </div>
+                      <div className="absolute inset-0 bg-black/45" />
+                    </div>
+                  )}
+                  {/* Animated HSL Gradient Layer inside Preview */}
+                  {previewBgMode === 'gradient' && (
+                    <div 
+                      className={`absolute inset-0 transition-all duration-500 z-0 pointer-events-none ${
+                        previewBgGradient === 'twilight' ? 'gradient-twilight' :
+                        previewBgGradient === 'aurora' ? 'gradient-aurora' :
+                        previewBgGradient === 'forest' ? 'gradient-forest' :
+                        previewBgGradient === 'golden' ? 'gradient-golden' : ''
+                      }`}
+                    >
+                      <div className="absolute inset-0 bg-black/20" />
+                    </div>
+                  )}
+                  {blackout && (
+                    <div className="absolute inset-0 bg-black z-20 flex items-center justify-center border-4 border-destructive rounded-lg">
+                      <div className="text-center text-destructive font-extrabold uppercase tracking-widest"><AlertTriangle className="w-8 h-8 mx-auto mb-1" /> BLACKOUT</div>
+                    </div>
+                  )}
+                  {activeProjected ? (
+                    <div className="flex flex-col h-full justify-between z-10 relative">
+                      <div className="flex justify-between items-center text-[10px] opacity-55 border-b border-white/20 pb-1 font-bold">
+                        <div className="flex items-center gap-1.5">
+                          <img src="favicon.ico" alt="" className="w-3.5 h-3.5 object-contain" />
+                          <span>PRESENTER</span>
+                        </div>
+                        <span>{activeProjected.translation}{activeProjected.secondaryTranslation ? ` + ${activeProjected.secondaryTranslation}` : ''}</span>
+                      </div>
+                      <div className="flex-grow flex flex-col items-center justify-center px-4 gap-1 overflow-y-auto">
+                        {/* Primary Text */}
+                        <p
+                          className="text-center font-medium"
+                          style={{
+                            fontSize: `calc(11px * ${previewFontSizeScale})`,
+                            fontFamily:
+                              previewFontFamily === 'cinzel'           ? '"Cinzel", serif' :
+                              previewFontFamily === 'eb-garamond'      ? '"EB Garamond", serif' :
+                              previewFontFamily === 'lora'             ? '"Lora", serif' :
+                              previewFontFamily === 'playfair-display' ? '"Playfair Display", serif' :
+                              previewFontFamily === 'raleway'          ? '"Raleway", sans-serif' :
+                              previewFontFamily === 'inter'            ? '"Inter", sans-serif' :
+                              previewFontFamily === 'sans-serif'       ? 'system-ui, sans-serif' :
+                              'Georgia, serif',
+                            fontStyle:
+                              previewFontFamily === 'raleway' ||
+                              previewFontFamily === 'inter' ||
+                              previewFontFamily === 'cinzel' ||
+                              previewFontFamily === 'sans-serif'
+                                ? 'normal' : 'italic'
+                          }}
+                        >
+                          &ldquo;{activeProjected.text}&rdquo;
+                        </p>
+
+                        {/* Secondary Text */}
+                        {activeProjected.secondaryText && (
+                          <>
+                            <div className="w-8 border-t border-white/20 my-0.5" />
+                            <p
+                              className="text-center text-zinc-300 opacity-85"
+                              style={{
+                                fontSize: `calc(9px * ${previewFontSizeScale})`,
+                                fontFamily:
+                                  previewFontFamily === 'cinzel'           ? '"Cinzel", serif' :
+                                  previewFontFamily === 'eb-garamond'      ? '"EB Garamond", serif' :
+                                  previewFontFamily === 'lora'             ? '"Lora", serif' :
+                                  previewFontFamily === 'playfair-display' ? '"Playfair Display", serif' :
+                                  previewFontFamily === 'raleway'          ? '"Raleway", sans-serif' :
+                                  previewFontFamily === 'inter'            ? '"Inter", sans-serif' :
+                                  previewFontFamily === 'sans-serif'       ? 'system-ui, sans-serif' :
+                                  'Georgia, serif',
+                                fontStyle: 'italic'
+                              }}
+                            >
+                              &ldquo;{activeProjected.secondaryText}&rdquo; <span className="text-[7px] not-italic opacity-60 font-semibold font-sans">({activeProjected.secondaryTranslation})</span>
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex justify-center border-t border-white/20 pt-1 text-[11px] font-bold text-gold"
+                           style={{
+                             fontFamily:
+                               previewFontFamily === 'cinzel'           ? '"Cinzel", serif' :
+                               previewFontFamily === 'eb-garamond'      ? '"EB Garamond", serif' :
+                               previewFontFamily === 'lora'             ? '"Lora", serif' :
+                               previewFontFamily === 'playfair-display' ? '"Playfair Display", serif' :
+                               previewFontFamily === 'raleway'          ? '"Raleway", sans-serif' :
+                               previewFontFamily === 'inter'            ? '"Inter", sans-serif' :
+                               previewFontFamily === 'sans-serif'       ? 'system-ui, sans-serif' :
+                               'Georgia, serif'
+                           }}>
+                        {activeProjected.reference}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col h-full items-center justify-center text-white/30 text-xs"><Tv className="w-5 h-5 mb-1" /> NO SCRIPTURE</div>
+                  )}
                 </div>
-              ) : (
-                <div className="flex flex-col h-full items-center justify-center text-white/30 text-xs"><Tv className="w-5 h-5 mb-1" /> NO SCRIPTURE</div>
-              )}
-            </div>
+              );
+            })()}
             <div className="flex justify-center gap-2">
               <button 
                 onClick={() => handleAdjacentVerse('prev')}
@@ -1147,23 +1435,63 @@ export default function OperatorConsole() {
                 <div className="space-y-4">
                   <h3 className="text-xs font-bold uppercase text-muted-foreground border-b pb-1">Translation Manager</h3>
                   
-                  <div className="space-y-2">
-                    <label className="text-xs font-semibold text-foreground">Active Translation</label>
-                    <select 
-                      value={translation} 
-                      onChange={async (e) => {
-                        const newTrans = e.target.value;
-                        setTranslation(newTrans);
-                        if (window.api) {
-                          await window.api.setSettings('selectedTranslation', newTrans);
-                        }
-                      }} 
-                      className="w-full text-xs p-2 bg-card border rounded outline-none focus:ring-1"
-                    >
-                      {availableTranslations.length > 0 ? availableTranslations.map(t => (
-                        <option key={t.translation} value={t.translation}>{t.translation} ({t.verseCount} verses)</option>
-                      )) : <option value="KJV">KJV (Installed)</option>}
-                    </select>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                      <label className="text-xs font-semibold text-foreground">Enable Parallel Dual-Translation</label>
+                      <input 
+                        type="checkbox" 
+                        checked={isDualProjectionEnabled} 
+                        onChange={async (e) => {
+                          const val = e.target.checked;
+                          setIsDualProjectionEnabled(val);
+                          if (window.api) {
+                            await window.api.setSettings('isDualProjectionEnabled', val);
+                          }
+                        }}
+                        className="h-4 w-4 bg-card border rounded accent-primary outline-none cursor-pointer"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-muted-foreground uppercase">Primary Translation</label>
+                      <select 
+                        value={translation} 
+                        onChange={async (e) => {
+                          const newTrans = e.target.value;
+                          setTranslation(newTrans);
+                          if (window.api) {
+                            await window.api.setSettings('selectedTranslation', newTrans);
+                          }
+                        }} 
+                        className="w-full text-xs p-2 bg-card border rounded outline-none focus:ring-1"
+                      >
+                        {availableTranslations.length > 0 ? availableTranslations.map(t => (
+                          <option key={t.translation} value={t.translation}>{t.translation} ({t.verseCount} verses)</option>
+                        )) : <option value="KJV">KJV (Installed)</option>}
+                      </select>
+                    </div>
+
+                    {isDualProjectionEnabled && (
+                      <div className="space-y-1 animate-in fade-in duration-200">
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase">Secondary Translation</label>
+                        <select 
+                          value={secondaryTranslation} 
+                          onChange={async (e) => {
+                            const newTrans = e.target.value;
+                            setSecondaryTranslation(newTrans);
+                            if (window.api) {
+                              await window.api.setSettings('secondaryTranslation', newTrans);
+                            }
+                          }} 
+                          className="w-full text-xs p-2 bg-card border rounded outline-none focus:ring-1"
+                        >
+                          <option value="">-- Select Secondary --</option>
+                          {availableTranslations.filter(t => t.translation !== translation).map(t => (
+                            <option key={t.translation} value={t.translation}>{t.translation}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2 pt-2">
@@ -1188,6 +1516,59 @@ export default function OperatorConsole() {
                           >
                             Delete
                           </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    <label className="text-xs font-semibold text-foreground">Available Catalog (One-click Install)</label>
+                    <div className="space-y-1 max-h-[160px] overflow-y-auto custom-scrollbar border p-1 rounded bg-muted/10">
+                      {catalog.map(item => (
+                        <div key={item.code} className="flex justify-between items-center bg-card p-1.5 rounded border border-border/80 text-[10px] my-0.5">
+                          <div className="flex flex-col">
+                            <span className="font-semibold text-foreground">{item.code} - {item.name}</span>
+                            <span className="text-[8px] text-muted-foreground">{item.isInstalled ? 'Installed' : 'Public Domain'}</span>
+                          </div>
+                          <div>
+                            {item.isInstalled ? (
+                              <button 
+                                onClick={async () => {
+                                  if (confirm(`Uninstall ${item.code}?`)) {
+                                    addAiLog('info', `Uninstalling ${item.code}...`);
+                                    const ok = await window.api.deleteTranslation(item.code);
+                                    if (ok) {
+                                      addAiLog('success', `Uninstalled ${item.code}`);
+                                      window.api.getTranslations().then(setAvailableTranslations);
+                                    } else {
+                                      addAiLog('error', `Failed to uninstall ${item.code}`);
+                                    }
+                                  }
+                                }}
+                                className="text-[8px] text-destructive hover:underline font-bold"
+                              >
+                                Uninstall
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={async () => {
+                                  addAiLog('info', `Downloading & Installing ${item.code} (from GitHub Catalog)...`);
+                                  const res = await window.api.downloadTranslation(item.code, item.url);
+                                  if (res === true) {
+                                    addAiLog('success', `Installed ${item.code}!`);
+                                    window.api.getTranslations().then(setAvailableTranslations);
+                                  } else if (res && (res as any).error) {
+                                    addAiLog('error', `Failed to install ${item.code}: ${(res as any).error}`);
+                                  } else {
+                                    addAiLog('error', `Failed to install ${item.code}`);
+                                  }
+                                }}
+                                className="text-[8px] bg-primary/10 text-primary hover:bg-primary/20 px-1.5 py-0.5 rounded font-bold border border-primary/20"
+                              >
+                                Install
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1342,7 +1723,68 @@ export default function OperatorConsole() {
                     </select>
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-2 pt-2 border-t border-border/50">
+                    <label className="text-xs font-semibold text-foreground">Active Speech Model</label>
+                    <select
+                      value={speechModelsStatus.activeModel}
+                      onChange={e => handleSelectSpeechModel(e.target.value)}
+                      className="w-full text-xs p-2 bg-card border rounded outline-none"
+                    >
+                      {[
+                        { id: 'Xenova/whisper-tiny.en', label: 'Tiny (English-only) ~75MB' },
+                        { id: 'Xenova/whisper-tiny', label: 'Tiny (Multilingual) ~75MB' },
+                        { id: 'Xenova/whisper-base.en', label: 'Base (English-only) ~145MB' },
+                        { id: 'Xenova/whisper-base', label: 'Base (Multilingual) ~145MB' },
+                        { id: 'Xenova/whisper-small.en', label: 'Small (English-only) ~480MB' }
+                      ].map(m => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2 pt-1 pb-2">
+                    <label className="text-[11px] font-bold text-muted-foreground uppercase">Local Models Cache</label>
+                    <div className="space-y-1 max-h-[140px] overflow-y-auto custom-scrollbar border p-1 rounded bg-muted/10">
+                      {[
+                        { id: 'Xenova/whisper-tiny.en', label: 'Tiny (English)' },
+                        { id: 'Xenova/whisper-tiny', label: 'Tiny (Multilingual)' },
+                        { id: 'Xenova/whisper-base.en', label: 'Base (English)' },
+                        { id: 'Xenova/whisper-base', label: 'Base (Multilingual)' },
+                        { id: 'Xenova/whisper-small.en', label: 'Small (English)' }
+                      ].map(m => {
+                        const isDownloaded = speechModelsStatus.downloaded.includes(m.id);
+                        const isActive = speechModelsStatus.activeModel === m.id;
+                        return (
+                          <div key={m.id} className="flex justify-between items-center bg-card p-1.5 rounded border border-border/80 text-[10px]">
+                            <div className="flex flex-col">
+                              <span className="font-semibold text-foreground">{m.label}</span>
+                              <span className="text-[9px] text-muted-foreground">{isActive ? 'Active' : isDownloaded ? 'Offline Ready' : 'Not Cached'}</span>
+                            </div>
+                            <div className="flex gap-2">
+                              {!isDownloaded && (
+                                <button
+                                  onClick={() => handleSelectSpeechModel(m.id)}
+                                  className="text-[8px] bg-primary/10 text-primary hover:bg-primary/20 px-1.5 py-0.5 rounded font-bold border border-primary/20"
+                                >
+                                  Pre-load
+                                </button>
+                              )}
+                              {isDownloaded && !isActive && (
+                                <button
+                                  onClick={() => handleDeleteSpeechModel(m.id)}
+                                  className="text-[8px] text-destructive hover:underline font-bold"
+                                >
+                                  Delete
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 border-t border-border/50 pt-2">
                     <label className="text-xs font-semibold text-foreground">Whisper Server URL</label>
                     <input
                       type="text"
@@ -1509,6 +1951,7 @@ export default function OperatorConsole() {
                               key={theme.id}
                               onClick={() => {
                                 setProjectionBgImage(theme.url);
+                                setProjectionBgMode('image');
                                 if (window.api) {
                                   window.api.setSettings('projectionBgImage', theme.url);
                                   window.api.setSettings('projectionBgMode', 'image');
@@ -1533,6 +1976,7 @@ export default function OperatorConsole() {
                             type="button"
                             onClick={() => {
                               setProjectionBgImage(projectionBgImage);
+                              setProjectionBgMode('image');
                               if (window.api) {
                                 window.api.setSettings('projectionBgImage', projectionBgImage);
                                 window.api.setSettings('projectionBgMode', 'image');
@@ -1605,7 +2049,7 @@ export default function OperatorConsole() {
                     </div>
                   </div>
                   
-                  <label className="flex items-center gap-2 text-xs font-semibold pt-1 cursor-pointer">
+                  <label className="flex items-center gap-2 text-xs font-semibold pt-1 cursor-pointer pb-2">
                     <input
                       type="checkbox"
                       checked={showVerseNumbers}
@@ -1619,6 +2063,202 @@ export default function OperatorConsole() {
                       }}
                     /> Show verse numbers in text
                   </label>
+
+                  {/* Slide Presets Editor */}
+                  <div className="space-y-4 pt-2 border-t border-border/50">
+                    <h3 className="text-xs font-bold uppercase text-muted-foreground border-b pb-1">Slide Type Style Presets</h3>
+                    
+                    {/* Category Selection Tabs */}
+                    <div className="flex bg-muted/45 p-0.5 rounded border border-border text-[10px]">
+                      {(['scripture', 'song', 'announcement', 'custom'] as const).map(cat => (
+                        <button
+                          type="button"
+                          key={cat}
+                          onClick={() => setEditingPresetCategory(cat)}
+                          className={`flex-1 py-1 font-bold rounded capitalize transition-all ${
+                            editingPresetCategory === cat ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {cat}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Preset Properties Editor */}
+                    {(() => {
+                      const preset = 
+                        editingPresetCategory === 'scripture' ? presetScripture :
+                        editingPresetCategory === 'song' ? presetSong :
+                        editingPresetCategory === 'announcement' ? presetAnnouncement :
+                        presetCustom;
+                      const activeP = preset || defaultPreset;
+
+                      return (
+                        <div className="space-y-3 p-3 bg-muted/20 border border-border/80 rounded-md animate-in fade-in duration-200">
+                          {/* Scale Slider */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs font-semibold text-foreground">
+                              <span>Font Size Scale</span>
+                              <span className="text-primary font-bold">{activeP.fontSizeScale?.toFixed(1)}x</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0.5"
+                              max="2.0"
+                              step="0.1"
+                              value={activeP.fontSizeScale ?? 1.0}
+                              onChange={e => updatePresetField('fontSizeScale', parseFloat(e.target.value))}
+                              className="w-full accent-primary"
+                            />
+                          </div>
+
+                          {/* Background Style Mode */}
+                          <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold text-muted-foreground uppercase">Background Mode</label>
+                            <div className="flex bg-muted/50 p-0.5 rounded-md border border-border text-[10px]">
+                              {['global', 'color', 'image', 'gradient'].map((mode) => (
+                                <button
+                                  type="button"
+                                  key={mode}
+                                  onClick={() => updatePresetField('projectionBgMode', mode)}
+                                  className={`flex-1 py-0.5 font-semibold rounded capitalize transition-all ${
+                                    (activeP.projectionBgMode || 'global') === mode ? 'bg-secondary text-foreground font-bold' : 'text-muted-foreground hover:text-foreground'
+                                  }`}
+                                >
+                                  {mode === 'global' ? 'Global' : mode}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Solid Background Color */}
+                          {activeP.projectionBgMode === 'color' && (
+                            <div className="space-y-1">
+                              <label className="text-xs font-semibold text-foreground">Solid Color</label>
+                              <div className="flex gap-2">
+                                <input 
+                                  type="color" 
+                                  value={activeP.projectionBgColor ?? '#000000'} 
+                                  onChange={e => updatePresetField('projectionBgColor', e.target.value)} 
+                                  className="w-8 h-8 rounded border p-0 cursor-pointer" 
+                                />
+                                <input 
+                                  type="text" 
+                                  value={activeP.projectionBgColor ?? '#000000'} 
+                                  onChange={e => updatePresetField('projectionBgColor', e.target.value)} 
+                                  className="w-full text-xs px-2 bg-card border rounded" 
+                                />
+                              </div>
+                            </div>
+                          )}
+
+                          {/* HSL Gradient Selector */}
+                          {activeP.projectionBgMode === 'gradient' && (
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-semibold text-foreground">Gradient Theme</label>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                {GRADIENT_THEMES.map(theme => {
+                                  const isActive = (activeP.projectionBgGradient ?? 'twilight') === theme.id;
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={theme.id}
+                                      onClick={() => updatePresetField('projectionBgGradient', theme.id)}
+                                      className={`relative p-2 rounded overflow-hidden border text-left transition-all h-10 flex flex-col justify-end ${
+                                        isActive ? 'border-primary ring-1 ring-primary/20 scale-[1.02]' : 'border-border/60 hover:border-border'
+                                      }`}
+                                      style={{ background: theme.previewStyle }}
+                                    >
+                                      <span className="text-[10px] font-bold text-white drop-shadow-md select-none leading-none">
+                                        {theme.name}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Image Theme Selector */}
+                          {activeP.projectionBgMode === 'image' && (
+                            <div className="space-y-1.5">
+                              <label className="text-xs font-semibold text-foreground">Select Backdrop Image</label>
+                              <div className="grid grid-cols-5 gap-1">
+                                {BACKGROUND_THEMES.map(theme => {
+                                  const isActive = activeP.projectionBgImage === theme.url;
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={theme.id}
+                                      onClick={() => updatePresetField('projectionBgImage', theme.url)}
+                                      className={`relative aspect-video rounded overflow-hidden border transition-all ${
+                                        isActive ? 'border-primary scale-[1.03]' : 'border-border/60 hover:border-border'
+                                      }`}
+                                      title={theme.name}
+                                    >
+                                      <img src={theme.url} alt={theme.name} className="w-full h-full object-cover" />
+                                    </button>
+                                  );
+                                })}
+                                {/* Custom upload image preview */}
+                                {activeP.projectionBgImage && activeP.projectionBgImage.startsWith('data:image/') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => updatePresetField('projectionBgImage', activeP.projectionBgImage)}
+                                    className="relative aspect-video rounded overflow-hidden border border-primary scale-[1.03]"
+                                  >
+                                    <img src={activeP.projectionBgImage} alt="Custom" className="w-full h-full object-cover" />
+                                  </button>
+                                )}
+                              </div>
+                              <div className="pt-0.5">
+                                <label className="flex items-center justify-center gap-1 w-full py-1 border border-dashed border-border rounded text-[10px] font-semibold cursor-pointer hover:bg-muted/30 transition-colors">
+                                  <Upload className="w-3.5 h-3.5" />
+                                  <span>Upload Custom Image</span>
+                                  <input 
+                                    type="file" 
+                                    accept="image/*" 
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = (event) => {
+                                          if (event.target?.result) {
+                                            updatePresetField('projectionBgImage', event.target.result as string);
+                                          }
+                                        };
+                                        reader.readAsDataURL(file);
+                                      }
+                                    }} 
+                                    className="hidden" 
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Font Selection */}
+                          <div className="space-y-1">
+                            <label className="text-xs font-semibold text-foreground">Preset Font</label>
+                            <select
+                              value={activeP.projectionFontFamily ?? 'serif'}
+                              onChange={e => updatePresetField('projectionFontFamily', e.target.value)}
+                              className="w-full text-xs p-1.5 bg-card border rounded outline-none"
+                            >
+                              <option value="cinzel">Cinzel (Classical)</option>
+                              <option value="eb-garamond">EB Garamond (Traditional)</option>
+                              <option value="lora">Lora (Literary)</option>
+                              <option value="playfair-display">Playfair Display (Elegant)</option>
+                              <option value="raleway">Raleway (Modern Sans)</option>
+                              <option value="inter">Inter (Minimalist)</option>
+                              <option value="serif">Georgia (Standard Serif)</option>
+                              <option value="sans-serif">System Sans (Clean)</option>
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
               </div>
             )}

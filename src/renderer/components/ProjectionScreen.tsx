@@ -4,6 +4,8 @@ interface ProjectedScripture {
   reference: string;
   text: string;
   translation: string;
+  secondaryText?: string;
+  secondaryTranslation?: string;
 }
 
 export default function ProjectionScreen() {
@@ -37,6 +39,45 @@ export default function ProjectionScreen() {
       setAnimationClass('opacity-0 translate-y-8 transition-none');
       setBlackout(false);
       setScripture(data);
+      
+      // Apply slide type style preset if attached, otherwise fallback to global store values
+      if (data && data.preset) {
+        const preset = data.preset;
+        const isGlobal = !preset.projectionBgMode || preset.projectionBgMode === 'global';
+
+        if (preset.fontSizeScale) setFontSizeScale(preset.fontSizeScale);
+        if (preset.projectionFontFamily) setFontFamily(preset.projectionFontFamily);
+
+        if (isGlobal) {
+          window.api.getSettings().then((settings: any) => {
+            if (settings.projectionBgColor) setBgColor(settings.projectionBgColor);
+            if (settings.projectionBgMode) setBgMode(settings.projectionBgMode);
+            if (settings.projectionBgImage) setBgImage(settings.projectionBgImage);
+            if (settings.projectionBgGradient) setBgGradient(settings.projectionBgGradient);
+          });
+        } else {
+          if (preset.projectionBgColor) setBgColor(preset.projectionBgColor);
+          if (preset.projectionBgMode) setBgMode(preset.projectionBgMode);
+          if (preset.projectionBgImage) {
+            setBgImage(preset.projectionBgImage);
+          } else {
+            window.api.getSettings().then((settings: any) => {
+              if (settings.projectionBgImage) setBgImage(settings.projectionBgImage);
+            });
+          }
+          if (preset.projectionBgGradient) setBgGradient(preset.projectionBgGradient);
+        }
+      } else {
+        // Fallback to global settings
+        window.api.getSettings().then((settings: any) => {
+          if (settings.projectionBgColor) setBgColor(settings.projectionBgColor);
+          if (settings.projectionBgMode) setBgMode(settings.projectionBgMode);
+          if (settings.projectionBgImage) setBgImage(settings.projectionBgImage);
+          if (settings.projectionBgGradient) setBgGradient(settings.projectionBgGradient);
+          if (settings.projectionFontFamily) setFontFamily(settings.projectionFontFamily);
+          if (settings.fontSizeScale) setFontSizeScale(settings.fontSizeScale);
+        });
+      }
       
       // Trigger smooth slide-in transition
       setTimeout(() => {
@@ -154,12 +195,13 @@ export default function ProjectionScreen() {
               </span>
             </div>
             <span className="text-[1.6vw] font-medium text-white/40">
-              {scripture.translation}
+              {scripture.translation}{scripture.secondaryTranslation ? ` + ${scripture.secondaryTranslation}` : ''}
             </span>
           </div>
 
           {/* Main Verse Text Section */}
-          <div className="flex-grow flex items-center justify-center py-8">
+          <div className="flex-grow flex flex-col items-center justify-center py-6 gap-3 overflow-y-auto">
+            {/* Primary Translation Verse */}
             <p
               className="text-center font-medium drop-shadow-md text-zinc-100 max-w-[85vw]"
               style={{
@@ -170,6 +212,24 @@ export default function ProjectionScreen() {
             >
               “{scripture.text}”
             </p>
+
+            {/* Secondary Stacked Translation Verse */}
+            {scripture.secondaryText && (
+              <>
+                <div className="w-[10vw] border-t border-white/20 my-1" />
+                <p
+                  className="text-center font-normal drop-shadow-md text-zinc-300 max-w-[85vw] opacity-80"
+                  style={{
+                    fontSize: `calc(0.72vw * ${parseFloat(getFontSize(scripture.secondaryText).split('[')[1].split('v')[0])})`,
+                    lineHeight: getFontSize(scripture.secondaryText).split(' ')[1].split('-')[1],
+                    ...getFontStyle(fontFamily),
+                    fontStyle: 'italic'
+                  }}
+                >
+                  “{scripture.secondaryText}” <span className="text-[0.6em] not-italic opacity-60 font-semibold font-sans ml-1">({scripture.secondaryTranslation})</span>
+                </p>
+              </>
+            )}
           </div>
 
           {/* Bottom Reference Citation Panel */}

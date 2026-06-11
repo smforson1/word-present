@@ -62,6 +62,9 @@ const makeApiMock = (overrides: Partial<typeof window.api> = {}) => ({
   hasGroqEnvKey: vi.fn().mockResolvedValue(false),
   initSpeechEngine: vi.fn().mockResolvedValue(true),
   transcribeChunk: vi.fn().mockResolvedValue(''),
+  getSpeechModelsStatus: vi.fn().mockResolvedValue({ downloaded: [], activeModel: 'Xenova/whisper-base.en' }),
+  deleteSpeechModel: vi.fn().mockResolvedValue(true),
+  getTranslationCatalog: vi.fn().mockResolvedValue([]),
   onSpeechInitProgress: vi.fn().mockReturnValue(() => {}),
   forceProject: vi.fn(),
   clearProject: vi.fn(),
@@ -118,7 +121,22 @@ describe('Gap 1 — QR Code Not Rendered', () => {
       createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
       createAnalyser: vi.fn().mockReturnValue(mockAnalyser),
       close: vi.fn(),
+      audioWorklet: {
+        addModule: vi.fn().mockResolvedValue(undefined),
+      },
+      createMediaStreamDestination: vi.fn().mockReturnValue({
+        connect: vi.fn(),
+      }),
     }));
+    const mockAudioWorkletNode = {
+      port: {
+        onmessage: null,
+        postMessage: vi.fn(),
+      },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    vi.stubGlobal('AudioWorkletNode', vi.fn().mockImplementation(() => mockAudioWorkletNode));
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     // Stub Speech Recognition so mount doesn't throw
@@ -186,9 +204,11 @@ describe('Gap 1 — QR Code Not Rendered', () => {
 // Assert the transcript text appears in the DOM.
 // ─────────────────────────────────────────────────────────────────────────────
 describe('Gap 2 — Offline Transcription Active', () => {
+  let capturedOnMessage: ((e: any) => void) | null = null;
   let capturedOnDataAvailable: ((e: any) => void) | null = null;
 
   beforeEach(() => {
+    capturedOnMessage = null;
     capturedOnDataAvailable = null;
     const mockTrack = { stop: vi.fn(), label: 'Default - Mock Mic' };
     const mockStream = {
@@ -213,8 +233,28 @@ describe('Gap 2 — Offline Transcription Active', () => {
       createAnalyser: vi.fn().mockReturnValue(mockAnalyser),
       close: vi.fn(),
       resume: vi.fn().mockResolvedValue(undefined),
-      state: 'running'
+      state: 'running',
+      audioWorklet: {
+        addModule: vi.fn().mockResolvedValue(undefined),
+      },
+      createMediaStreamDestination: vi.fn().mockReturnValue({
+        connect: vi.fn(),
+      }),
     }));
+    const mockAudioWorkletNode = {
+      port: {
+        set onmessage(fn: any) {
+          capturedOnMessage = fn;
+        },
+        get onmessage() {
+          return capturedOnMessage;
+        },
+        postMessage: vi.fn(),
+      },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    vi.stubGlobal('AudioWorkletNode', vi.fn().mockImplementation(() => mockAudioWorkletNode));
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
 
@@ -269,12 +309,16 @@ describe('Gap 2 — Offline Transcription Active', () => {
         if (micButton) fireEvent.click(micButton);
       });
 
-      // Simulate raw microphone samples processing (Blob received via MediaRecorder)
+      // Simulate raw microphone samples processing (AudioWorkletNode chunk message)
       await act(async () => {
-        if (capturedOnDataAvailable) {
-          const mockBlob = new Blob([new Uint8Array(1000)], { type: 'audio/webm' });
-          capturedOnDataAvailable({
-            data: mockBlob
+        if (capturedOnMessage) {
+          // Send non-silent samples (amplitude > 0.003 threshold)
+          const samples = new Float32Array(1024).fill(0.05);
+          capturedOnMessage({
+            data: {
+              type: 'chunk',
+              data: samples.buffer
+            }
           });
         }
       });
@@ -324,7 +368,22 @@ describe('Gap 5 — Bookmark Label Modal Missing', () => {
       createMediaStreamSource: vi.fn().mockReturnValue({ connect: vi.fn() }),
       createAnalyser: vi.fn().mockReturnValue(mockAnalyser),
       close: vi.fn(),
+      audioWorklet: {
+        addModule: vi.fn().mockResolvedValue(undefined),
+      },
+      createMediaStreamDestination: vi.fn().mockReturnValue({
+        connect: vi.fn(),
+      }),
     }));
+    const mockAudioWorkletNode = {
+      port: {
+        onmessage: null,
+        postMessage: vi.fn(),
+      },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    vi.stubGlobal('AudioWorkletNode', vi.fn().mockImplementation(() => mockAudioWorkletNode));
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     // Stub Speech Recognition so mount doesn't throw

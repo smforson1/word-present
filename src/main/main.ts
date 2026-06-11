@@ -13,7 +13,7 @@ import { detectScriptureReferencesOffline, formatScripturesInText } from './scri
 import { exportSessionPdf, ExportedVerse } from './pdf-export';
 import { dialog } from 'electron';
 import { downloadOpenSourceTranslation, importLocalFile } from './translation-manager';
-import { initSpeechEngine, transcribeChunk, isSpeechEngineReady } from './speech-engine';
+import { initSpeechEngine, transcribeChunk, isSpeechEngineReady, getDownloadedModels, deleteModelFiles } from './speech-engine';
 
 // Load .env — works in dev (project root) and in packaged builds (resources folder)
 loadDotEnv({ path: join(app.isPackaged ? process.resourcesPath : process.cwd(), '.env') });
@@ -29,12 +29,84 @@ const store = new Store({
     whisperUrl: 'http://localhost:8080',
     projectionBgColor: '#000000',
     projectionBgMode: 'color',
+    projectionBgGradient: 'twilight',
     projectionBgImage: '',
     projectionFontFamily: 'serif',
     showVerseNumbers: false,
-    aiMode: 'auto-project' // 'auto-project' | 'suggest-only'
+    aiMode: 'auto-project', // 'auto-project' | 'suggest-only'
+
+    // Dual Translation Settings
+    secondaryTranslation: '',
+    isDualProjectionEnabled: false,
+
+    // Speech Model Manager
+    selectedSpeechModel: 'Xenova/whisper-base.en',
+
+    // Style Presets
+    preset_scripture: {
+      fontSizeScale: 1.0,
+      projectionBgMode: 'global',
+      projectionBgColor: '#000000',
+      projectionBgGradient: 'twilight',
+      projectionBgImage: '',
+      projectionFontFamily: 'serif'
+    },
+    preset_song: {
+      fontSizeScale: 1.2,
+      projectionBgMode: 'global',
+      projectionBgColor: '#000000',
+      projectionBgGradient: 'twilight',
+      projectionBgImage: '',
+      projectionFontFamily: 'sans-serif'
+    },
+    preset_announcement: {
+      fontSizeScale: 1.0,
+      projectionBgMode: 'global',
+      projectionBgColor: '#0f172a',
+      projectionBgGradient: 'twilight',
+      projectionBgImage: '',
+      projectionFontFamily: 'sans-serif'
+    },
+    preset_custom: {
+      fontSizeScale: 1.0,
+      projectionBgMode: 'global',
+      projectionBgColor: '#000000',
+      projectionBgGradient: 'twilight',
+      projectionBgImage: '',
+      projectionFontFamily: 'serif'
+    },
+
+    // Noise Gate Settings
+    isNoiseGateEnabled: true,
+    noiseGateThreshold: 0.003
   }
 });
+
+// Migrate existing default presets to 'global' background mode
+try {
+  const currentScripture = store.get('preset_scripture') as any;
+  if (currentScripture && currentScripture.projectionBgMode === 'color' && currentScripture.projectionBgColor === '#000000' && !currentScripture.projectionBgImage) {
+    currentScripture.projectionBgMode = 'global';
+    store.set('preset_scripture', currentScripture);
+  }
+  const currentSong = store.get('preset_song') as any;
+  if (currentSong && currentSong.projectionBgMode === 'color' && currentSong.projectionBgColor === '#000000' && !currentSong.projectionBgImage) {
+    currentSong.projectionBgMode = 'global';
+    store.set('preset_song', currentSong);
+  }
+  const currentAnnouncement = store.get('preset_announcement') as any;
+  if (currentAnnouncement && currentAnnouncement.projectionBgMode === 'color' && currentAnnouncement.projectionBgColor === '#0f172a' && !currentAnnouncement.projectionBgImage) {
+    currentAnnouncement.projectionBgMode = 'global';
+    store.set('preset_announcement', currentAnnouncement);
+  }
+  const currentCustom = store.get('preset_custom') as any;
+  if (currentCustom && currentCustom.projectionBgMode === 'color' && currentCustom.projectionBgColor === '#000000' && !currentCustom.projectionBgImage) {
+    currentCustom.projectionBgMode = 'global';
+    store.set('preset_custom', currentCustom);
+  }
+} catch (e) {
+  console.error('[Migration] Failed to migrate settings presets:', e);
+}
 
 // App State
 let mainWindow: BrowserWindow | null = null;
@@ -255,7 +327,30 @@ function startNetworkServer() {
           const showVerseNumbers = store.get('showVerseNumbers') as boolean;
           const textCombined = verses.map(v => showVerseNumbers ? `[${v.verse}] ${v.text}` : v.text).join(' ');
           const refFormatted = `${parsed.book} ${parsed.chapter}:${parsed.verseStart || 1}${parsed.verseEnd ? '-' + parsed.verseEnd : ''} (${translation})`;
-          handleForceProject({ reference: refFormatted, text: textCombined, translation });
+          
+          const isDual = store.get('isDualProjectionEnabled') as boolean;
+          const secondaryTranslation = store.get('secondaryTranslation') as string;
+          let secondaryText = '';
+          if (isDual && secondaryTranslation && secondaryTranslation !== translation) {
+            const secVerses = db.queryVerses({
+              translation: secondaryTranslation,
+              book: parsed.book,
+              chapter: parsed.chapter,
+              verseStart: parsed.verseStart,
+              verseEnd: parsed.verseEnd
+            });
+            if (secVerses.length > 0) {
+              secondaryText = secVerses.map(v => showVerseNumbers ? `[${v.verse}] ${v.text}` : v.text).join(' ');
+            }
+          }
+
+          const projectPayload: any = { reference: refFormatted, text: textCombined, translation };
+          if (secondaryText) {
+            projectPayload.secondaryText = secondaryText;
+            projectPayload.secondaryTranslation = secondaryTranslation;
+          }
+          
+          handleForceProject(projectPayload);
         } else {
           socket.emit('lookup:error', 'Scripture reference not found in local SQLite.');
         }
@@ -334,8 +429,9 @@ function setupIpcHandlers() {
     store.set(key, value);
     // Notify window components of theme/projection updates if settings change
     if (key === 'theme' || key === 'projectionBgColor' || key === 'projectionBgMode' || key === 'projectionBgImage' ||
-        key === 'projectionBgGradient' ||
-        key === 'projectionFontFamily' || key === 'showVerseNumbers' || key === 'fontSizeScale') {
+        key === 'projectionBgGradient' || key === 'projectionFontFamily' || key === 'showVerseNumbers' || key === 'fontSizeScale' ||
+        key === 'secondaryTranslation' || key === 'isDualProjectionEnabled' ||
+        key.startsWith('preset_') || key === 'isNoiseGateEnabled' || key === 'noiseGateThreshold') {
       broadcastSync('sync:status', { [key]: value });
     }
     return store.store;
@@ -386,6 +482,22 @@ function setupIpcHandlers() {
   });
 
   // Translations
+  const PUBLIC_TRANSLATION_CATALOG = [
+    { code: "ASV", name: "American Standard Version", url: "https://bolls.life/static/translations/ASV.json" },
+    { code: "WEB", name: "World English Bible", url: "https://bolls.life/static/translations/WEB.json" },
+    { code: "BBE", name: "Bible in Basic English", url: "https://raw.githubusercontent.com/thiagobodruk/bible/master/json/en_bbe.json" }
+  ];
+
+  ipcMain.handle('translations:get-catalog', async () => {
+    await db.ready();
+    const installed = await db.getAvailableTranslations();
+    const installedCodes = new Set(installed.map((t: any) => t.translation.toUpperCase()));
+    return PUBLIC_TRANSLATION_CATALOG.map(item => ({
+      ...item,
+      isInstalled: installedCodes.has(item.code.toUpperCase())
+    }));
+  });
+
   ipcMain.handle('db:get-translations', async () => {
     await db.ready();
     return db.getAvailableTranslations();
@@ -458,14 +570,29 @@ function setupIpcHandlers() {
   // Initialise the local Whisper pipeline and relay progress events to the renderer
   ipcMain.handle('speech:init', async (event) => {
     console.log('[speech:init] starting offline Whisper engine…');
+    const selectedModel = store.get('selectedSpeechModel') as string || 'Xenova/whisper-base.en';
 
     const ok = await initSpeechEngine((status, detail) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('speech:init-progress', { status, detail });
       }
-    });
+    }, selectedModel);
 
     return ok;
+  });
+
+  // Get cached models status
+  ipcMain.handle('speech:get-models-status', async () => {
+    const downloaded = getDownloadedModels();
+    return {
+      downloaded,
+      activeModel: store.get('selectedSpeechModel') as string || 'Xenova/whisper-base.en'
+    };
+  });
+
+  // Delete local model folder from cache
+  ipcMain.handle('speech:delete-model', async (_, modelName: string) => {
+    return deleteModelFiles(modelName);
   });
 
   // Transcribe one audio chunk.
@@ -629,11 +756,32 @@ function setupIpcHandlers() {
       lastProjectedRef = fullRefStr;
       lastProjectedTime = now;
 
-      const projectionData = {
+      // Handle dual translation resolution for AI suggestion/projection
+      const isDual = store.get('isDualProjectionEnabled') as boolean;
+      const secondaryTranslation = store.get('secondaryTranslation') as string;
+      let secondaryText = '';
+      if (isDual && secondaryTranslation && secondaryTranslation !== translation) {
+        const secVerses = db.queryVerses({
+          translation: secondaryTranslation,
+          book: ref.book,
+          chapter: ref.chapter,
+          verseStart: ref.verse,
+          verseEnd: ref.endVerse
+        });
+        if (secVerses.length > 0) {
+          secondaryText = secVerses.map(v => showVerseNumbers ? `[${v.verse}] ${v.text}` : v.text).join(' ');
+        }
+      }
+
+      const projectionData: any = {
         reference: `${fullRefStr} (${translation})`,
         text: textCombined,
         translation
       };
+      if (secondaryText) {
+        projectionData.secondaryText = secondaryText;
+        projectionData.secondaryTranslation = secondaryTranslation;
+      }
 
       // Notify the renderer to highlight this reference in the transcript pane
       event.sender.send('ai:detected-ref', fullRefStr);

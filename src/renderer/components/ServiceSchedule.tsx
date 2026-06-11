@@ -15,7 +15,7 @@ export interface ScheduleItem {
 interface ServiceScheduleProps {
   schedule: ScheduleItem[];
   setSchedule: React.Dispatch<React.SetStateAction<ScheduleItem[]>>;
-  onProject: (reference: string, text: string) => void;
+  onProject: (reference: string, text: string, type?: 'scripture' | 'song' | 'announcement' | 'custom') => void;
 }
 
 export default function ServiceSchedule({ schedule, setSchedule, onProject }: ServiceScheduleProps) {
@@ -59,19 +59,19 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
     if (schedule.length === 0) return;
     const nextIdx = activeIndex + 1 < schedule.length ? activeIndex + 1 : activeIndex;
     setActiveIndex(nextIdx);
-    onProject(schedule[nextIdx].reference, schedule[nextIdx].text);
+    onProject(schedule[nextIdx].reference, schedule[nextIdx].text, schedule[nextIdx].type);
   };
 
   const handlePrev = () => {
     if (schedule.length === 0) return;
     const prevIdx = activeIndex - 1 >= 0 ? activeIndex - 1 : 0;
     setActiveIndex(prevIdx);
-    onProject(schedule[prevIdx].reference, schedule[prevIdx].text);
+    onProject(schedule[prevIdx].reference, schedule[prevIdx].text, schedule[prevIdx].type);
   };
 
   const handleProjectIndex = (idx: number) => {
     setActiveIndex(idx);
-    onProject(schedule[idx].reference, schedule[idx].text);
+    onProject(schedule[idx].reference, schedule[idx].text, schedule[idx].type);
   };
 
   const removeItem = (id: string) => {

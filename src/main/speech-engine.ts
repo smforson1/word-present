@@ -21,6 +21,7 @@ process.env.XENOVA_CACHE_DIR = MODEL_CACHE_DIR;
 let pipeline: any = null;
 let pipelineLoading = false;
 let pipelineReady = false;
+let currentModelName = 'Xenova/whisper-base.en';
 const pendingCallbacks: Array<() => void> = [];
 
 export type TranscribeProgress = (
@@ -28,8 +29,18 @@ export type TranscribeProgress = (
   detail?: string
 ) => void;
 
-export async function initSpeechEngine(onProgress: TranscribeProgress): Promise<boolean> {
-  if (pipelineReady) return true;
+export async function initSpeechEngine(onProgress: TranscribeProgress, modelName?: string): Promise<boolean> {
+  const targetModel = modelName || 'Xenova/whisper-base.en';
+
+  if (pipelineReady && currentModelName === targetModel && pipeline) return true;
+
+  // Unload previous pipeline if switching models
+  if (currentModelName !== targetModel) {
+    pipelineReady = false;
+    pipeline = null;
+    currentModelName = targetModel;
+  }
+
   if (pipelineLoading) {
     return new Promise((resolve) => {
       pendingCallbacks.push(() => resolve(pipelineReady));
@@ -39,7 +50,8 @@ export async function initSpeechEngine(onProgress: TranscribeProgress): Promise<
   pipelineLoading = true;
 
   try {
-    onProgress('downloading', 'Downloading Whisper base.en model (~290MB, one-time)…');
+    const modelLabel = targetModel.replace('Xenova/whisper-', '');
+    onProgress('downloading', `Downloading Whisper ${modelLabel} model (one-time)…`);
 
     const { pipeline: createPipeline, env } = await import('@xenova/transformers');
     env.cacheDir = MODEL_CACHE_DIR;
@@ -47,7 +59,7 @@ export async function initSpeechEngine(onProgress: TranscribeProgress): Promise<
 
     pipeline = await createPipeline(
       'automatic-speech-recognition',
-      'Xenova/whisper-base.en',
+      targetModel,
       {
         progress_callback: (progress: any) => {
           if (progress.status === 'downloading') {
@@ -63,7 +75,7 @@ export async function initSpeechEngine(onProgress: TranscribeProgress): Promise<
     );
 
     pipelineReady = true;
-    onProgress('ready', 'Whisper base.en ready — fully offline, no internet required.');
+    onProgress('ready', `Whisper ${modelLabel} ready — fully offline, no internet required.`);
   } catch (err: any) {
     onProgress('error', `Failed to load Whisper model: ${err?.message ?? err}`);
     pipelineReady = false;
@@ -94,10 +106,11 @@ export async function transcribeChunk(pcmData: number[]): Promise<string> {
       float32[i] = Math.max(-1, Math.min(1, pcmData[i] / 32768));
     }
 
+    const isMultilingual = !currentModelName.endsWith('.en');
     const result = await pipeline(float32, {
       sampling_rate: 16000,
       task: 'transcribe',
-      language: 'english',
+      language: isMultilingual ? undefined : 'english',
       return_timestamps: false,
     });
 
@@ -110,4 +123,50 @@ export async function transcribeChunk(pcmData: number[]): Promise<string> {
 
 export function isSpeechEngineReady(): boolean {
   return pipelineReady;
+}
+
+/**
+ * Scan Cache Directory for already downloaded models
+ */
+export function getDownloadedModels(): string[] {
+  const modelsDir = join(MODEL_CACHE_DIR, 'models', 'Xenova');
+  if (!fs.existsSync(modelsDir)) return [];
+
+  try {
+    const files = fs.readdirSync(modelsDir);
+    return files.filter(f => {
+      const p = join(modelsDir, f);
+      if (fs.statSync(p).isDirectory()) {
+        return fs.readdirSync(p).length > 0;
+      }
+      return false;
+    }).map(f => `Xenova/${f}`);
+  } catch (err) {
+    console.error('[SpeechEngine] Failed to read cached models directory:', err);
+    return [];
+  }
+}
+
+/**
+ * Safely purge local model files on disk
+ */
+export function deleteModelFiles(modelName: string): boolean {
+  const parts = modelName.split('/');
+  if (parts.length < 2) return false;
+
+  const modelFolder = join(MODEL_CACHE_DIR, 'models', parts[0], parts[1]);
+  if (!fs.existsSync(modelFolder)) return true;
+
+  try {
+    if (currentModelName === modelName) {
+      pipeline = null;
+      pipelineReady = false;
+    }
+    fs.rmSync(modelFolder, { recursive: true, force: true });
+    console.log(`[SpeechEngine] Deleted model files for ${modelName}`);
+    return true;
+  } catch (err) {
+    console.error(`[SpeechEngine] Failed to delete model files for ${modelName}:`, err);
+    return false;
+  }
 }

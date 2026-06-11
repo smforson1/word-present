@@ -37,6 +37,10 @@ interface ProjectionData {
   reference: string;
   text: string;
   translation: string;
+  secondaryText?: string;
+  secondaryTranslation?: string;
+  slideType?: string;
+  preset?: any;
 }
 
 interface NetworkInfo {
@@ -64,6 +68,17 @@ interface AppSettings {
   projectionFontFamily: string;
   showVerseNumbers: boolean;
   aiMode: string;
+
+  // New settings keys
+  secondaryTranslation: string;
+  isDualProjectionEnabled: boolean;
+  selectedSpeechModel: string;
+  preset_scripture: any;
+  preset_song: any;
+  preset_announcement: any;
+  preset_custom: any;
+  isNoiseGateEnabled: boolean;
+  noiseGateThreshold: number;
 }
 
 interface Window {
@@ -88,6 +103,7 @@ interface Window {
 
     // Translations
     getTranslations: () => Promise<TranslationRecord[]>;
+    getTranslationCatalog?: () => Promise<{ code: string; name: string; url: string; isInstalled: boolean }[]>;
     downloadTranslation: (code: string, url: string) => Promise<boolean | {error: string}>;
     importTranslationFile: (code: string) => Promise<boolean | {error: string}>;
     deleteTranslation: (code: string) => Promise<boolean>;
@@ -100,6 +116,8 @@ interface Window {
     hasGroqEnvKey: () => Promise<boolean>;
     initSpeechEngine: () => Promise<boolean>;
     transcribeChunk: (wavBuffer: Uint8Array) => Promise<string>;
+    getSpeechModelsStatus: () => Promise<{ downloaded: string[], activeModel: string }>;
+    deleteSpeechModel: (modelName: string) => Promise<boolean>;
     onSpeechInitProgress: (callback: (event: Electron.IpcRendererEvent, data: { status: string; detail?: string }) => void) => () => void;
 
     // Session Logging
