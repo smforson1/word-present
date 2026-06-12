@@ -14,7 +14,10 @@ export default function MobileRemote() {
   const [history, setHistory] = useState<{ reference: string; text: string; translation: string }[]>([]);
 
   useEffect(() => {
-    const s = io();
+    const socketUrl = window.location.port && window.location.port !== '3000'
+      ? `${window.location.protocol}//${window.location.hostname}:3000`
+      : undefined;
+    const s = io(socketUrl);
     setSocket(s);
 
     s.on('connect', () => console.log('Connected to socket server'));

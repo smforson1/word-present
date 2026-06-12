@@ -97,7 +97,7 @@ export default function OperatorConsole() {
   const [aiMode, setAiMode] = useState('auto-project');
 
   // Network Pairing State
-  const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string } | null>(null);
+  const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string; tunnelUrl?: string } | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [envKeyActive, setEnvKeyActive] = useState(false);
   const [groqEnvKeyActive, setGroqEnvKeyActive] = useState(false);
@@ -333,12 +333,6 @@ export default function OperatorConsole() {
 
     window.api.getNetworkInfo().then((info: any) => {
       setNetworkInfo(info);
-      if (info) {
-        const url = `http://${info.ip}:${info.port}/?view=remote`;
-        QRCode.toDataURL(url)
-          .then((dataUrl: string) => setQrDataUrl(dataUrl))
-          .catch((err: any) => console.error('[Startup] QR Code generation failed:', err));
-      }
     }).catch((err: any) => console.error('[Startup] Failed to fetch network info:', err));
 
     const updateDevices = () => {
@@ -377,11 +371,18 @@ export default function OperatorConsole() {
     const unsubscribeClear = window.api.onClearScreen(() => setActiveProjected(null));
     const unsubscribeAILog = window.api.onAILog((_, log) => addAiLog(log.type, log.message));
     const unsubscribeAISuggest = window.api.onAISuggestion((_, data) => setAiSuggestion(data));
+    const unsubscribeStatus = window.api.onStatusUpdate((_, status) => {
+      if (status && status.tunnelUrl !== undefined) {
+        setNetworkInfo(prev => prev ? { ...prev, tunnelUrl: status.tunnelUrl } : null);
+      }
+    });
+
     const unsubscribeDetectedRef = window.api.onDetectedRef((_, ref) => {
       setDetectedRefs(prev => prev.includes(ref) ? prev : [...prev, ref]);
     });
 
     return () => {
+      unsubscribeStatus();
       unsubscribeProject();
       unsubscribeClear();
       unsubscribeAILog();
@@ -398,6 +399,17 @@ export default function OperatorConsole() {
   useEffect(() => {
     refreshCatalog();
   }, [availableTranslations]);
+
+  useEffect(() => {
+    if (networkInfo) {
+      const url = networkInfo.tunnelUrl || `http://${networkInfo.ip}:${networkInfo.port}/?view=remote`;
+      QRCode.toDataURL(url)
+        .then((dataUrl: string) => setQrDataUrl(dataUrl))
+        .catch((err: any) => console.error('[Startup] QR Code generation failed:', err));
+    } else {
+      setQrDataUrl(null);
+    }
+  }, [networkInfo]);
 
   useEffect(() => {
     if (isRecording && selectedAudioDevice) {
@@ -1640,7 +1652,12 @@ export default function OperatorConsole() {
                   <h3 className="text-xs font-bold uppercase text-muted-foreground border-b pb-1">Network & Remote</h3>
                   {networkInfo ? (
                     <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">LAN Remote: <strong>{networkInfo.ip}:{networkInfo.port}</strong> | PIN: <strong className="text-primary">{networkInfo.pin}</strong></p>
+                      <p className="text-xs text-muted-foreground">LAN Fallback: <strong>{networkInfo.ip}:{networkInfo.port}</strong> | PIN: <strong className="text-primary">{networkInfo.pin}</strong></p>
+                      {networkInfo.tunnelUrl ? (
+                        <p className="text-xs text-muted-foreground">Cloud Link: <a href={`${networkInfo.tunnelUrl}/?view=remote`} target="_blank" rel="noreferrer" className="text-primary underline font-semibold">{networkInfo.tunnelUrl}</a></p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground animate-pulse">Initializing secure cloud link...</p>
+                      )}
                       {qrDataUrl && (
                         <div className="mt-3">
                           <p className="text-xs text-muted-foreground font-semibold mb-1">Scan to connect mobile remote:</p>

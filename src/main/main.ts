@@ -117,21 +117,62 @@ let pin = Math.floor(1000 + Math.random() * 9000).toString();
 let activeScripture: { reference: string; text: string; translation: string } | null = null;
 let lastProjectedRef = '';
 let lastProjectedTime = 0;
+let activeTunnelUrl = '';
+let activeTunnel: any = null;
 
 // Resolve Local IP
 function getLocalIpAddress() {
   const nets = networkInterfaces();
+  const candidates: { name: string; address: string }[] = [];
+  
   for (const name of Object.keys(nets)) {
     for (const net of nets[name] || []) {
       if (net.family === 'IPv4' && !net.internal) {
-        return net.address;
+        candidates.push({ name, address: net.address });
       }
     }
   }
-  return 'localhost';
+  
+  if (candidates.length === 0) return 'localhost';
+
+  const getPriority = (name: string): number => {
+    const lower = name.toLowerCase();
+    
+    // Virtual interfaces are lowest priority
+    if (lower.includes('virtualbox') || 
+        lower.includes('vmware') || 
+        lower.includes('wsl') || 
+        lower.includes('docker') ||
+        lower.includes('vethernet') ||
+        lower.includes('host-only') ||
+        lower.includes('loopback')) {
+      return 0;
+    }
+    
+    // Wi-Fi is highest priority for mobile pairing
+    if (lower.includes('wi-fi') || lower.includes('wifi') || lower.includes('wireless')) {
+      return 3;
+    }
+    
+    // Standard Ethernet / Local Area Connection
+    if (lower === 'ethernet' || lower === 'local area connection') {
+      return 2;
+    }
+    
+    // Numbered Ethernet adapters (like Ethernet 4, might be virtualBox)
+    if (lower.startsWith('ethernet') || lower.startsWith('local area connection')) {
+      return 1;
+    }
+    
+    return 1;
+  };
+  
+  // Sort candidates by priority desc
+  candidates.sort((a, b) => getPriority(b.name) - getPriority(a.name));
+  
+  return candidates[0].address;
 }
 
-const localIp = getLocalIpAddress();
 const PORT = 3000;
 
 // Resolve dynamic dev port from Vite plugin environment if available
@@ -245,10 +286,28 @@ function createWindows() {
 function startNetworkServer() {
   const server = createServer((req, res) => {
     // Serve Mobile PWA
-    // In dev mode, redirect to Vite server with remote query param
+    // In dev mode, proxy to Vite server instead of redirecting so the client origin/port stays 3000
     if (!app.isPackaged && fs.existsSync(join(__dirname, '../index.html'))) {
-      res.writeHead(302, { Location: `http://${localIp}:${devPort}/?view=remote` });
-      res.end();
+      const http = require('http');
+      const targetUrl = `http://localhost:${devPort}${req.url}`;
+      const headers = { ...req.headers };
+      headers.host = `localhost:${devPort}`;
+
+      const proxyReq = http.request(targetUrl, {
+        method: req.method,
+        headers: headers
+      }, (proxyRes: any) => {
+        res.writeHead(proxyRes.statusCode, proxyRes.headers);
+        proxyRes.pipe(res, { end: true });
+      });
+
+      proxyReq.on('error', (err: any) => {
+        console.error('[Proxy Error] Failed to connect to Vite:', err);
+        res.writeHead(502);
+        res.end('Vite dev server unreachable. Please make sure Vite is running.');
+      });
+
+      req.pipe(proxyReq, { end: true });
       return;
     }
 
@@ -293,7 +352,7 @@ function startNetworkServer() {
   // Socket event coordination
   socketServer.on('connection', (socket: any) => {
     // Send initial pairing status
-    socket.emit('auth:request', { ip: localIp, port: PORT });
+    socket.emit('auth:request', { ip: getLocalIpAddress(), port: PORT });
 
     // Handle pin verification
     socket.on('auth:verify', (inputPin: string) => {
@@ -372,7 +431,31 @@ function startNetworkServer() {
   });
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server listening on http://${localIp}:${PORT}`);
+    console.log(`Server listening on http://${getLocalIpAddress()}:${PORT}`);
+    
+    // Start localtunnel for public URL sharing
+    try {
+      const localtunnel = require('localtunnel');
+      localtunnel({ port: PORT }).then((tunnel: any) => {
+        activeTunnel = tunnel;
+        activeTunnelUrl = tunnel.url;
+        console.log(`Localtunnel active: ${activeTunnelUrl}`);
+        
+        // Notify open windows/consoles
+        broadcastSync('sync:status', { tunnelUrl: activeTunnelUrl });
+        
+        tunnel.on('close', () => {
+          console.log('Localtunnel tunnel closed');
+          activeTunnel = null;
+          activeTunnelUrl = '';
+          broadcastSync('sync:status', { tunnelUrl: '' });
+        });
+      }).catch((err: any) => {
+        console.error('[Localtunnel] Error establishing tunnel:', err);
+      });
+    } catch (err) {
+      console.error('[Localtunnel] Failed to load localtunnel module:', err);
+    }
   });
 }
 
@@ -801,7 +884,7 @@ function setupIpcHandlers() {
 
   // Send local details for QR configuration
   ipcMain.handle('settings:get-network', () => {
-    return { ip: localIp, port: PORT, pin };
+    return { ip: getLocalIpAddress(), port: PORT, pin, tunnelUrl: activeTunnelUrl };
   });
 
   // Let the renderer know if an API key is available via env (without exposing the key itself)
@@ -844,5 +927,8 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  if (activeTunnel) {
+    try { activeTunnel.close(); } catch { /* ignore */ }
+  }
   if (process.platform !== 'darwin') app.quit();
 });

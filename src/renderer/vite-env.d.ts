@@ -130,7 +130,7 @@ interface Window {
     // System Events Listeners (Main -> Renderer)
     onProjectUpdate: (callback: (event: Electron.IpcRendererEvent, data: ProjectionData) => void) => () => void;
     onClearScreen: (callback: () => void) => () => void;
-    onStatusUpdate: (callback: (event: Electron.IpcRendererEvent, status: Partial<AppSettings> & { blackout?: boolean }) => void) => () => void;
+    onStatusUpdate: (callback: (event: Electron.IpcRendererEvent, status: Partial<AppSettings> & { blackout?: boolean; tunnelUrl?: string }) => void) => () => void;
     onVUUpdate: (callback: (event: Electron.IpcRendererEvent, value: number) => void) => () => void;
     onAILog: (callback: (event: Electron.IpcRendererEvent, data: { type: 'info' | 'success' | 'warning' | 'error'; message: string }) => void) => () => void;
     onAISuggestion: (callback: (event: Electron.IpcRendererEvent, data: ProjectionData) => void) => () => void;
