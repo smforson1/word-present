@@ -68,6 +68,14 @@ export interface BookmarkRecord {
   createdAt: string;
 }
 
+export interface SongRecord {
+  id?: number;
+  title: string;
+  artist: string;
+  lyrics: string;
+  createdAt?: string;
+}
+
 export interface SearchResult {
   book: string;
   chapter: number;
@@ -184,6 +192,7 @@ export class BibleDatabase {
 
     this.initSchema();
     this.seedDatabase();
+    this.seedSongs();
     this.saveToDisk();
   }
 
@@ -228,6 +237,19 @@ export class BibleDatabase {
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
     `);
+
+    // Songs table
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS songs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        artist TEXT NOT NULL DEFAULT '',
+        lyrics TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_songs_title ON songs(title);`);
+    this.db.run(`CREATE INDEX IF NOT EXISTS idx_songs_lyrics ON songs(lyrics);`);
   }
 
   // Parse reference string like "John 3:16" or "1 Cor 13:1-4" or "Psalm 23"
@@ -546,6 +568,92 @@ export class BibleDatabase {
     this.cache.clear();
     this.saveToDisk();
     return true;
+  }
+
+  // ── Songs CRUD ─────────────────────────────────────────────────────
+
+  public addSong(song: Omit<SongRecord, 'id' | 'createdAt'>): number {
+    if (!this.db) return -1;
+    this.db.run(
+      `INSERT INTO songs (title, artist, lyrics) VALUES (?, ?, ?)`,
+      [song.title, song.artist || '', song.lyrics] as any
+    );
+    const result = this.db.exec('SELECT last_insert_rowid()');
+    const id = result.length > 0 ? (result[0].values[0][0] as number) : -1;
+    this.saveToDisk();
+    return id;
+  }
+
+  public updateSong(id: number, song: Omit<SongRecord, 'id' | 'createdAt'>): boolean {
+    if (!this.db) return false;
+    this.db.run(
+      `UPDATE songs SET title = ?, artist = ?, lyrics = ? WHERE id = ?`,
+      [song.title, song.artist || '', song.lyrics, id] as any
+    );
+    this.saveToDisk();
+    return true;
+  }
+
+  public deleteSong(id: number): boolean {
+    if (!this.db) return false;
+    this.db.run(`DELETE FROM songs WHERE id = ?`, [id] as any);
+    this.saveToDisk();
+    return true;
+  }
+
+  public getSongs(query: string): SongRecord[] {
+    if (!this.db) return [];
+    const sanitized = query.trim().replace(/'/g, "''");
+    let stmt;
+    if (sanitized) {
+      stmt = this.db.prepare(`
+        SELECT * FROM songs 
+        WHERE title LIKE '%' || ? || '%' OR artist LIKE '%' || ? || '%' OR lyrics LIKE '%' || ? || '%'
+        ORDER BY title ASC
+      `);
+      stmt.bind([sanitized, sanitized, sanitized]);
+    } else {
+      stmt = this.db.prepare(`SELECT * FROM songs ORDER BY title ASC`);
+    }
+    const songs: SongRecord[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as any;
+      songs.push({
+        id: row.id,
+        title: row.title,
+        artist: row.artist,
+        lyrics: row.lyrics,
+        createdAt: row.created_at
+      });
+    }
+    stmt.free();
+    return songs;
+  }
+
+  private seedSongs() {
+    if (!this.db) return;
+    const result = this.db.exec("SELECT COUNT(*) as count FROM songs");
+    const count = result.length > 0 ? (result[0].values[0][0] as number) : 0;
+    if (count > 0) return;
+
+    console.log('[BibleDB] Seeding database with standard worship songs...');
+    this.addSong({
+      title: 'Amazing Grace',
+      artist: 'John Newton',
+      lyrics: `[Verse 1]\nAmazing grace! How sweet the sound\nThat saved a wretch like me!\nI once was lost, but now am found;\nWas blind, but now I see.\n\n[Verse 2]\n'Twas grace that taught my heart to fear,\nAnd grace my fears relieved;\nHow precious did that grace appear\nThe hour I first believed.\n\n[Verse 3]\nThrough many dangers, toils and snares,\nI have already come;\n'Tis grace hath brought me safe thus far,\nAnd grace will lead me home.\n\n[Verse 4]\nWhen we've been there ten thousand years,\nBright shining as the sun,\nWe've no less days to sing God's praise\nThan when we first begun.`
+    });
+
+    this.addSong({
+      title: 'How Great Thou Art',
+      artist: 'Carl Boberg',
+      lyrics: `[Verse 1]\nO Lord my God, when I in awesome wonder\nConsider all the worlds Thy hands have made\nI see the stars, I hear the rolling thunder\nThy power throughout the universe displayed\n\n[Chorus]\nThen sings my soul, my Savior God, to Thee\nHow great Thou art, how great Thou art\nThen sings my soul, my Savior God, to Thee\nHow great Thou art, how great Thou art\n\n[Verse 2]\nWhen through the woods, and forest glades I wander\nAnd hear the birds sing sweetly in the trees\nWhen I look down, from lofty mountain grandeur\nAnd hear the brook, and feel the gentle breeze\n\n[Verse 3]\nAnd when I think, that God, His Son not sparing\nSent Him to die, I scarce can take it in\nThat on the Cross, my burden gladly bearing\nHe bled and died to take away my sin`
+    });
+
+    this.addSong({
+      title: 'It Is Well With My Soul',
+      artist: 'Horatio Spafford',
+      lyrics: `[Verse 1]\nWhen peace like a river, attendeth my way,\nWhen sorrows like sea billows roll;\nWhatever my lot, Thou hast taught me to say,\nIt is well, it is well, with my soul.\n\n[Chorus]\nIt is well (it is well)\nWith my soul (with my soul)\nIt is well, it is well with my soul.\n\n[Verse 2]\nThough Satan should buffet, though trials should come,\nLet this blest assurance control,\nThat Christ hath regarded my helpless estate,\nAnd hath shed His own blood for my soul.\n\n[Verse 3]\nMy sin, oh, the bliss of this glorious thought!\nMy sin, not in part but the whole,\nIs nailed to the cross, and I bear it no more,\nPraise the Lord, praise the Lord, O my soul!`
+    });
   }
 
   // Seed the database with the full KJV Bible (31,102 verses)

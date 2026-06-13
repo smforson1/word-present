@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld('api', {
   addBookmark: (bookmark: any) => ipcRenderer.invoke('db:add-bookmark', bookmark),
   removeBookmark: (id: number) => ipcRenderer.invoke('db:remove-bookmark', id),
 
+  // Songs
+  getSongs: (query: string) => ipcRenderer.invoke('db:get-songs', query),
+  addSong: (song: any) => ipcRenderer.invoke('db:add-song', song),
+  updateSong: (id: number, song: any) => ipcRenderer.invoke('db:update-song', id, song),
+  deleteSong: (id: number) => ipcRenderer.invoke('db:delete-song', id),
+
   // Translations
   getTranslations: () => ipcRenderer.invoke('db:get-translations'),
   getTranslationCatalog: () => ipcRenderer.invoke('translations:get-catalog'),

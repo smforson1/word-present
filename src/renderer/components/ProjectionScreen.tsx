@@ -6,6 +6,7 @@ interface ProjectedScripture {
   translation: string;
   secondaryText?: string;
   secondaryTranslation?: string;
+  slideType?: string;
 }
 
 export default function ProjectionScreen() {
@@ -191,30 +192,32 @@ export default function ProjectionScreen() {
             <div className="flex items-center gap-2.5">
               <img src="favicon.ico" alt="" className="w-7 h-7 opacity-60 object-contain" />
               <span className="text-[1.6vw] font-bold text-white/50 tracking-wider uppercase">
-                Scripture Presenter
+                {scripture.slideType === 'song' ? scripture.reference : 'Scripture Presenter'}
               </span>
             </div>
             <span className="text-[1.6vw] font-medium text-white/40">
-              {scripture.translation}{scripture.secondaryTranslation ? ` + ${scripture.secondaryTranslation}` : ''}
+              {scripture.slideType === 'song'
+                ? 'Worship'
+                : `${scripture.translation}${scripture.secondaryTranslation ? ` + ${scripture.secondaryTranslation}` : ''}`}
             </span>
           </div>
 
           {/* Main Verse Text Section */}
           <div className="flex-grow flex flex-col items-center justify-center py-6 gap-3 overflow-y-auto">
-            {/* Primary Translation Verse */}
+            {/* Primary Translation Verse or Lyrics */}
             <p
-              className="text-center font-medium drop-shadow-md text-zinc-100 max-w-[85vw]"
+              className="text-center font-medium drop-shadow-md text-zinc-100 max-w-[85vw] whitespace-pre-wrap"
               style={{
                 fontSize: `calc(1vw * ${parseFloat(getFontSize(scripture.text).split('[')[1].split('v')[0])})`,
                 lineHeight: getFontSize(scripture.text).split(' ')[1].split('-')[1],
                 ...getFontStyle(fontFamily)
               }}
             >
-              “{scripture.text}”
+              {scripture.slideType === 'song' ? scripture.text : `“${scripture.text}”`}
             </p>
 
             {/* Secondary Stacked Translation Verse */}
-            {scripture.secondaryText && (
+            {scripture.slideType !== 'song' && scripture.secondaryText && (
               <>
                 <div className="w-[10vw] border-t border-white/20 my-1" />
                 <p
@@ -233,14 +236,16 @@ export default function ProjectionScreen() {
           </div>
 
           {/* Bottom Reference Citation Panel */}
-          <div className="flex justify-center border-t border-white/20 pt-6">
-            <h2
-              className="text-[4.5vw] font-bold tracking-wide drop-shadow-md"
-              style={{ color: '#C9A227', ...getFontStyle(fontFamily), fontStyle: 'normal' }}
-            >
-              {scripture.reference}
-            </h2>
-          </div>
+          {scripture.slideType !== 'song' && (
+            <div className="flex justify-center border-t border-white/20 pt-6">
+              <h2
+                className="text-[4.5vw] font-bold tracking-wide drop-shadow-md"
+                style={{ color: '#C9A227', ...getFontStyle(fontFamily), fontStyle: 'normal' }}
+              >
+                {scripture.reference}
+              </h2>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-col h-full items-center justify-center gap-4 animate-pulse z-10 relative">

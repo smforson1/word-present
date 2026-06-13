@@ -33,6 +33,14 @@ interface BookmarkRecord {
   createdAt: string;
 }
 
+interface SongRecord {
+  id?: number;
+  title: string;
+  artist: string;
+  lyrics: string;
+  createdAt?: string;
+}
+
 interface ProjectionData {
   reference: string;
   text: string;
@@ -100,6 +108,12 @@ interface Window {
     getBookmarks: () => Promise<BookmarkRecord[]>;
     addBookmark: (bookmark: Omit<BookmarkRecord, 'id'>) => Promise<number>;
     removeBookmark: (id: number) => Promise<boolean>;
+
+    // Songs
+    getSongs: (query: string) => Promise<SongRecord[]>;
+    addSong: (song: Omit<SongRecord, 'id' | 'createdAt'>) => Promise<number>;
+    updateSong: (id: number, song: Omit<SongRecord, 'id' | 'createdAt'>) => Promise<boolean>;
+    deleteSong: (id: number) => Promise<boolean>;
 
     // Translations
     getTranslations: () => Promise<TranslationRecord[]>;

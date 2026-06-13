@@ -564,6 +564,27 @@ function setupIpcHandlers() {
     return true;
   });
 
+  // Songs
+  ipcMain.handle('db:get-songs', async (_, query: string) => {
+    await db.ready();
+    return db.getSongs(query);
+  });
+
+  ipcMain.handle('db:add-song', async (_, song: any) => {
+    await db.ready();
+    return db.addSong(song);
+  });
+
+  ipcMain.handle('db:update-song', async (_, id: number, song: any) => {
+    await db.ready();
+    return db.updateSong(id, song);
+  });
+
+  ipcMain.handle('db:delete-song', async (_, id: number) => {
+    await db.ready();
+    return db.deleteSong(id);
+  });
+
   // Translations
   const PUBLIC_TRANSLATION_CATALOG = [
     { code: "ASV", name: "American Standard Version", url: "https://bolls.life/static/translations/ASV.json" },

@@ -2,7 +2,8 @@ import React, { useEffect, useState, useRef } from 'react';
 import { 
   Mic, MicOff, Tv, Volume2, 
   Send, Trash2, Moon, Sun, AlertTriangle, CheckCircle, Info, Power,
-  BookOpen, Search as SearchIcon, Upload, ChevronLeft, ChevronRight
+  BookOpen, Search as SearchIcon, Upload, ChevronLeft, ChevronRight,
+  Music
 } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -10,6 +11,7 @@ import BibleBrowser from './BibleBrowser';
 import SearchPanel from './SearchPanel';
 import BookmarksPanel from './BookmarksPanel';
 import ServiceSchedule, { ScheduleItem } from './ServiceSchedule';
+import SongsPanel from './SongsPanel';
 
 interface ScriptureHistoryItem {
   timestamp: string;
@@ -176,7 +178,7 @@ export default function OperatorConsole() {
   const [bookmarkLabel, setBookmarkLabel] = useState('');
 
   // Layout State
-  const [middleTab, setMiddleTab] = useState<'browser' | 'search' | 'manual' | 'ai'>('browser');
+  const [middleTab, setMiddleTab] = useState<'browser' | 'search' | 'manual' | 'ai' | 'songs'>('browser');
   const [rightTab, setRightTab] = useState<'schedule' | 'bookmarks' | 'history' | 'settings'>('schedule');
 
   // Refs
@@ -1375,6 +1377,7 @@ export default function OperatorConsole() {
             <button onClick={() => setMiddleTab('browser')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'browser' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><BookOpen className="w-4 h-4" /> Browser</button>
             <button onClick={() => setMiddleTab('search')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'search' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><SearchIcon className="w-4 h-4" /> Search</button>
             <button onClick={() => setMiddleTab('manual')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'manual' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><Send className="w-4 h-4" /> Manual</button>
+            <button onClick={() => setMiddleTab('songs')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'songs' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><Music className="w-4 h-4" /> Songs</button>
             <button onClick={() => setMiddleTab('ai')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'ai' ? 'border-gold text-gold bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><CheckCircle className="w-4 h-4" /> AI Logs</button>
           </div>
 
@@ -1382,6 +1385,7 @@ export default function OperatorConsole() {
           <div className="flex-grow overflow-hidden bg-background">
             {middleTab === 'browser' && <BibleBrowser translation={translation} showVerseNumbers={showVerseNumbers} onProject={project} onAddBookmark={addBookmark} onAddSchedule={addScheduleItem} />}
             {middleTab === 'search' && <SearchPanel translation={translation} showVerseNumbers={showVerseNumbers} onProject={project} onAddBookmark={addBookmark} onAddSchedule={addScheduleItem} />}
+            {middleTab === 'songs' && <SongsPanel onProject={project} onAddSchedule={addScheduleItem} />}
             {middleTab === 'manual' && (
               <div className="p-6">
                 <form onSubmit={handleManualSearch} className="flex gap-2">
