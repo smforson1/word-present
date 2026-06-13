@@ -98,6 +98,97 @@ function resolveBook(raw: string): string | null {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Protestant Bible Book Chapter Counts (for disambiguating concatenated digits)
+// ─────────────────────────────────────────────────────────────────────────────
+const BOOK_CHAPTER_COUNTS: Record<string, number> = {
+  'Genesis': 50, 'Exodus': 40, 'Leviticus': 27, 'Numbers': 36, 'Deuteronomy': 34,
+  'Joshua': 24, 'Judges': 21, 'Ruth': 4, '1 Samuel': 31, '2 Samuel': 24,
+  '1 Kings': 22, '2 Kings': 25, '1 Chronicles': 29, '2 Chronicles': 36, 'Ezra': 10,
+  'Nehemiah': 13, 'Esther': 10, 'Job': 42, 'Psalms': 150, 'Proverbs': 31,
+  'Ecclesiastes': 12, 'Song of Solomon': 8, 'Isaiah': 66, 'Jeremiah': 52, 'Lamentations': 5,
+  'Ezekiel': 48, 'Daniel': 12, 'Hosea': 14, 'Joel': 3, 'Amos': 9,
+  'Obadiah': 1, 'Jonah': 4, 'Micah': 7, 'Nahum': 3, 'Habakkuk': 3,
+  'Zephaniah': 3, 'Haggai': 2, 'Zechariah': 14, 'Malachi': 4,
+  'Matthew': 28, 'Mark': 16, 'Luke': 24, 'John': 21, 'Acts': 28,
+  'Romans': 16, '1 Corinthians': 16, '2 Corinthians': 13, 'Galatians': 6, 'Ephesians': 6,
+  'Philippians': 4, 'Colossians': 4, '1 Thessalonians': 5, '2 Thessalonians': 3, '1 Timothy': 6,
+  '2 Timothy': 4, 'Titus': 3, 'Philemon': 1, 'Hebrews': 13, 'James': 5,
+  '1 Peter': 5, '2 Peter': 3, '1 John': 5, '2 John': 1, '3 John': 1,
+  'Jude': 1, 'Revelation': 22
+};
+
+/**
+ * Splits a concatenated 2-to-4-digit string following a book name into chapter and verse.
+ * Applies book chapter limits and standard disambiguation heuristics.
+ */
+function splitSingleNumber(book: string, numStr: string): { chapter: number; verse: number } | null {
+  const maxChapters = BOOK_CHAPTER_COUNTS[book];
+  if (!maxChapters) return null;
+
+  const len = numStr.length;
+  if (len === 2) {
+    // "12" -> Chapter 1, Verse 2
+    const ch = parseInt(numStr[0], 10);
+    const vs = parseInt(numStr[1], 10);
+    if (ch >= 1 && ch <= maxChapters && vs >= 1 && vs <= 176) {
+      return { chapter: ch, verse: vs };
+    }
+  } else if (len === 3) {
+    // Split 1: C=X, V=YZ (e.g. "316" -> C=3, V=16)
+    const ch1 = parseInt(numStr[0], 10);
+    const vs1 = parseInt(numStr.substring(1), 10);
+    const split1Valid = ch1 >= 1 && ch1 <= maxChapters && vs1 >= 1 && vs1 <= 176;
+
+    // Split 2: C=XY, V=Z (e.g. "146" -> C=14, V=6)
+    const ch2 = parseInt(numStr.substring(0, 2), 10);
+    const vs2 = parseInt(numStr[2], 10);
+    const split2Valid = ch2 >= 1 && ch2 <= maxChapters && vs2 >= 1 && vs2 <= 176;
+
+    if (split1Valid && split2Valid) {
+      // Both valid, prefer Split 1 (1-digit chapter) as a heuristic
+      return { chapter: ch1, verse: vs1 };
+    } else if (split1Valid) {
+      return { chapter: ch1, verse: vs1 };
+    } else if (split2Valid) {
+      return { chapter: ch2, verse: vs2 };
+    }
+  } else if (len === 4) {
+    // Split 1: C=X, V=YZW (e.g. C=1, V=191 - usually invalid since max verse <= 176)
+    const ch1 = parseInt(numStr[0], 10);
+    const vs1 = parseInt(numStr.substring(1), 10);
+    const split1Valid = ch1 >= 1 && ch1 <= maxChapters && vs1 >= 1 && vs1 <= 176;
+
+    // Split 2: C=XY, V=ZW (e.g. "1221" -> C=12, V=21)
+    const ch2 = parseInt(numStr.substring(0, 2), 10);
+    const vs2 = parseInt(numStr.substring(2), 10);
+    const split2Valid = ch2 >= 1 && ch2 <= maxChapters && vs2 >= 1 && vs2 <= 176;
+
+    // Split 3: C=XYZ, V=W (e.g. "1191" -> C=119, V=1)
+    const ch3 = parseInt(numStr.substring(0, 3), 10);
+    const vs3 = parseInt(numStr[3], 10);
+    const split3Valid = ch3 >= 1 && ch3 <= maxChapters && vs3 >= 1 && vs3 <= 176;
+
+    // Psalms special case: prefer 3-digit chapter (100-150) if valid
+    if (book === 'Psalms' && split3Valid) {
+      const chVal = ch3;
+      if (chVal >= 100 && chVal <= 150) {
+        return { chapter: ch3, verse: vs3 };
+      }
+    }
+
+    if (split2Valid) {
+      return { chapter: ch2, verse: vs2 };
+    } else if (split3Valid) {
+      return { chapter: ch3, verse: vs3 };
+    } else if (split1Valid) {
+      return { chapter: ch1, verse: vs1 };
+    }
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Core regex patterns
 //
 // After spoken-number normalization, transcript text looks like:
@@ -123,9 +214,10 @@ const BOOK_PATTERN = `\\b(?:${BOOK_NAMES_UNION})\\b`;
 const CHAP_VERSE_COLON = `(\\d{1,3}):(\\d{1,3})(?:\\s*[-–through]+\\s*(\\d{1,3}))?`;
 const CHAP_VERSE_WORDS = `chapter\\s+(\\d{1,3})(?:(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse\\s+number|verse|verses)\\s*|\\s*[,;]\\s*(?:verse\\s+number|verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?)?`;
 const CHAP_VERSE_SPACE = `(\\d{1,3})(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse\\s+number|verse|verses)\\s*|\\s*[,;]\\s*(?:verse\\s+number|verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?`;
+const CHAP_VERSE_SINGLE = `(\\d{2,4})`;
 
 // Full patterns — ordered most-specific to least-specific
-const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' }> = [
+const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' | 'single' }> = [
   {
     re: new RegExp(
       `(?:book\\s+of\\s+|turn\\s+to\\s+|open\\s+to\\s+|found\\s+in\\s+|go\\s+to\\s+|in\\s+)?` +
@@ -146,6 +238,13 @@ const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' }> = [
       `(${BOOK_PATTERN})\\s+` +
       CHAP_VERSE_SPACE, 'gi'),
     groups: 'space',
+  },
+  {
+    re: new RegExp(
+      `(?:book\\s+of\\s+|turn\\s+to\\s+|open\\s+to\\s+|found\\s+in\\s+|go\\s+to\\s+|in\\s+)?` +
+      `(${BOOK_PATTERN})\\s+` +
+      CHAP_VERSE_SINGLE + `\\b`, 'gi'),
+    groups: 'single',
   },
 ];
 
@@ -189,10 +288,17 @@ function parseMatches(text: string): ParseResult[] {
         chapter = parseInt(match[2], 10);
         verse = match[3] ? parseInt(match[3], 10) : undefined;
         endVerse = match[4] ? parseInt(match[4], 10) : undefined;
-      } else {
+      } else if (groups === 'space') {
         chapter = parseInt(match[2], 10);
         verse = parseInt(match[3], 10);
         endVerse = match[4] ? parseInt(match[4], 10) : undefined;
+      } else if (groups === 'single') {
+        const bookName = resolveBook(bookRaw);
+        if (!bookName) continue;
+        const split = splitSingleNumber(bookName, match[2]);
+        if (!split) continue;
+        chapter = split.chapter;
+        verse = split.verse;
       }
 
       if (!chapter || chapter > 150) continue;
