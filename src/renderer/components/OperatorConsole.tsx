@@ -91,12 +91,18 @@ export default function OperatorConsole() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [whisperUrl, setWhisperUrl] = useState('http://localhost:8080');
   const [projectionBgColor, setProjectionBgColor] = useState('#000000');
-  const [projectionBgMode, setProjectionBgMode] = useState<'color' | 'image' | 'gradient'>('color');
+  const [projectionBgMode, setProjectionBgMode] = useState<'color' | 'image' | 'gradient' | 'motion' | 'video'>('color');
   const [projectionBgImage, setProjectionBgImage] = useState('');
   const [projectionBgGradient, setProjectionBgGradient] = useState<string>('twilight');
   const [projectionFontFamily, setProjectionFontFamily] = useState('serif');
   const [showVerseNumbers, setShowVerseNumbers] = useState(false);
   const [aiMode, setAiMode] = useState('auto-project');
+
+  // Motion backgrounds & custom video loop states
+  const [projectionParticleSpeed, setProjectionParticleSpeed] = useState(0.5);
+  const [projectionParticleDensity, setProjectionParticleDensity] = useState(50);
+  const [projectionParticleColor, setProjectionParticleColor] = useState<'gold' | 'white' | 'blue' | 'rainbow'>('gold');
+  const [projectionBgVideo, setProjectionBgVideo] = useState('');
 
   // Network Pairing State
   const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string; tunnelUrl?: string } | null>(null);
@@ -257,6 +263,10 @@ export default function OperatorConsole() {
       setProjectionFontFamily(settings.projectionFontFamily || 'serif');
       setShowVerseNumbers(settings.showVerseNumbers || false);
       setAiMode(settings.aiMode || 'auto-project');
+      if (settings.projectionParticleSpeed !== undefined) setProjectionParticleSpeed(settings.projectionParticleSpeed);
+      if (settings.projectionParticleDensity !== undefined) setProjectionParticleDensity(settings.projectionParticleDensity);
+      if (settings.projectionParticleColor) setProjectionParticleColor(settings.projectionParticleColor);
+      if (settings.projectionBgVideo !== undefined) setProjectionBgVideo(settings.projectionBgVideo);
       if (settings.selectedSpeechModel) {
         setSpeechModelsStatus(prev => ({ ...prev, activeModel: settings.selectedSpeechModel }));
       }
@@ -1849,7 +1859,7 @@ export default function OperatorConsole() {
                   
                   <div className="space-y-2">
                     <label className="text-xs font-semibold text-foreground">Background Style</label>
-                    <div className="flex bg-muted/50 p-0.5 rounded-md border border-border">
+                    <div className="grid grid-cols-5 bg-muted/50 p-0.5 rounded-md border border-border gap-0.5">
                       <button
                         type="button"
                         onClick={() => {
@@ -1859,11 +1869,11 @@ export default function OperatorConsole() {
                             window.api.broadcastStatus({ projectionBgMode: 'color' });
                           }
                         }}
-                        className={`flex-1 py-1 text-[11px] font-bold rounded transition-all ${
+                        className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
                           projectionBgMode === 'color' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        Solid Color
+                        Color
                       </button>
                       <button
                         type="button"
@@ -1874,7 +1884,7 @@ export default function OperatorConsole() {
                             window.api.broadcastStatus({ projectionBgMode: 'image' });
                           }
                         }}
-                        className={`flex-1 py-1 text-[11px] font-bold rounded transition-all ${
+                        className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
                           projectionBgMode === 'image' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
@@ -1893,11 +1903,49 @@ export default function OperatorConsole() {
                             });
                           }
                         }}
-                        className={`flex-1 py-1 text-[11px] font-bold rounded transition-all ${
+                        className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
                           projectionBgMode === 'gradient' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        Animated HSL
+                        HSL
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProjectionBgMode('motion');
+                          if (window.api) {
+                            window.api.setSettings('projectionBgMode', 'motion');
+                            window.api.broadcastStatus({ 
+                              projectionBgMode: 'motion',
+                              projectionParticleSpeed,
+                              projectionParticleDensity,
+                              projectionParticleColor
+                            });
+                          }
+                        }}
+                        className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
+                          projectionBgMode === 'motion' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        Particles
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProjectionBgMode('video');
+                          if (window.api) {
+                            window.api.setSettings('projectionBgMode', 'video');
+                            window.api.broadcastStatus({ 
+                              projectionBgMode: 'video',
+                              projectionBgVideo
+                            });
+                          }
+                        }}
+                        className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
+                          projectionBgMode === 'video' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        Video
                       </button>
                     </div>
                   </div>
@@ -2030,6 +2078,136 @@ export default function OperatorConsole() {
                     </div>
                   )}
 
+                  {projectionBgMode === 'motion' && (
+                    <div className="space-y-3 p-3 bg-muted/20 border border-border/80 rounded-md">
+                      {/* Particle Speed */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-semibold text-foreground">
+                          <span>Particle Speed</span>
+                          <span className="text-primary font-bold">{projectionParticleSpeed.toFixed(1)}x</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.5"
+                          step="0.1"
+                          value={projectionParticleSpeed}
+                          onChange={e => {
+                            const val = parseFloat(e.target.value);
+                            setProjectionParticleSpeed(val);
+                            if (window.api) {
+                              window.api.setSettings('projectionParticleSpeed', val);
+                              window.api.broadcastStatus({ projectionParticleSpeed: val });
+                            }
+                          }}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+
+                      {/* Particle Density */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs font-semibold text-foreground">
+                          <span>Particle Density</span>
+                          <span className="text-primary font-bold">{projectionParticleDensity}</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="10"
+                          max="100"
+                          step="5"
+                          value={projectionParticleDensity}
+                          onChange={e => {
+                            const val = parseInt(e.target.value);
+                            setProjectionParticleDensity(val);
+                            if (window.api) {
+                              window.api.setSettings('projectionParticleDensity', val);
+                              window.api.broadcastStatus({ projectionParticleDensity: val });
+                            }
+                          }}
+                          className="w-full accent-primary"
+                        />
+                      </div>
+
+                      {/* Particle Color Theme */}
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-foreground">Particle Theme Color</label>
+                        <select
+                          value={projectionParticleColor}
+                          onChange={e => {
+                            const val = e.target.value as 'gold' | 'white' | 'blue' | 'rainbow';
+                            setProjectionParticleColor(val);
+                            if (window.api) {
+                              window.api.setSettings('projectionParticleColor', val);
+                              window.api.broadcastStatus({ projectionParticleColor: val });
+                            }
+                          }}
+                          className="w-full text-xs p-1.5 bg-card border rounded outline-none"
+                        >
+                          <option value="gold">Warm Gold</option>
+                          <option value="white">Shimmering White</option>
+                          <option value="blue">Deep Sapphire Blue</option>
+                          <option value="rainbow">Chromatic Rainbow</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
+                  {projectionBgMode === 'video' && (
+                    <div className="space-y-3 p-3 bg-muted/20 border border-border/80 rounded-md">
+                      <label className="text-xs font-semibold text-foreground">Looping Video Background</label>
+                      
+                      {projectionBgVideo ? (
+                        <div className="flex flex-col gap-2 p-2 bg-card border border-border rounded-md">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="truncate max-w-[180px] font-mono text-muted-foreground animate-pulse" title={projectionBgVideo}>
+                              {projectionBgVideo.split(/[/\\]/).pop()}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProjectionBgVideo('');
+                                if (window.api) {
+                                  window.api.setSettings('projectionBgVideo', '');
+                                  window.api.broadcastStatus({ projectionBgVideo: '' });
+                                }
+                              }}
+                              className="text-red-500 hover:text-red-600 font-semibold text-[10px]"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                          <video
+                            src={`file://${projectionBgVideo}`}
+                            autoPlay
+                            loop
+                            muted
+                            className="aspect-video w-full object-cover rounded border border-border/60"
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground italic">No background video uploaded.</p>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (window.api && window.api.uploadBgVideo) {
+                            const path = await window.api.uploadBgVideo();
+                            if (path) {
+                              setProjectionBgVideo(path);
+                              window.api.setSettings('projectionBgVideo', path);
+                              window.api.broadcastStatus({ projectionBgVideo: path });
+                            }
+                          }
+                        }}
+                        className="flex items-center justify-center gap-1.5 w-full py-1.5 border border-dashed border-border rounded text-xs font-semibold cursor-pointer hover:bg-muted/30 transition-colors"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>Upload Custom Video (MP4/WebM)</span>
+                      </button>
+                    </div>
+                  )}
+
                   <div className="space-y-2 pt-1">
                     <label className="text-xs font-semibold text-foreground">Projection Font</label>
                     <div className="grid grid-cols-1 gap-1.5">
@@ -2136,17 +2314,17 @@ export default function OperatorConsole() {
                           {/* Background Style Mode */}
                           <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-muted-foreground uppercase">Background Mode</label>
-                            <div className="flex bg-muted/50 p-0.5 rounded-md border border-border text-[10px]">
-                              {['global', 'color', 'image', 'gradient'].map((mode) => (
+                            <div className="grid grid-cols-3 bg-muted/50 p-0.5 rounded-md border border-border text-[10px] gap-0.5">
+                              {['global', 'color', 'image', 'gradient', 'motion', 'video'].map((mode) => (
                                 <button
                                   type="button"
                                   key={mode}
                                   onClick={() => updatePresetField('projectionBgMode', mode)}
-                                  className={`flex-1 py-0.5 font-semibold rounded capitalize transition-all ${
+                                  className={`py-0.5 font-semibold rounded capitalize transition-all text-center ${
                                     (activeP.projectionBgMode || 'global') === mode ? 'bg-secondary text-foreground font-bold' : 'text-muted-foreground hover:text-foreground'
                                   }`}
                                 >
-                                  {mode === 'global' ? 'Global' : mode}
+                                  {mode === 'global' ? 'Global' : mode === 'motion' ? 'Particles' : mode === 'video' ? 'Video' : mode}
                                 </button>
                               ))}
                             </div>
@@ -2255,6 +2433,109 @@ export default function OperatorConsole() {
                                   />
                                 </label>
                               </div>
+                            </div>
+                          )}
+
+                          {/* Preset Particle Settings */}
+                          {activeP.projectionBgMode === 'motion' && (
+                            <div className="space-y-3 p-2 bg-muted/30 border border-border/60 rounded-md">
+                              {/* Particle Speed */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[11px] font-semibold text-foreground">
+                                  <span>Particle Speed</span>
+                                  <span className="text-primary font-bold">{(activeP.projectionParticleSpeed ?? 0.5).toFixed(1)}x</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="0.2"
+                                  max="1.5"
+                                  step="0.1"
+                                  value={activeP.projectionParticleSpeed ?? 0.5}
+                                  onChange={e => updatePresetField('projectionParticleSpeed', parseFloat(e.target.value))}
+                                  className="w-full accent-primary scale-90"
+                                />
+                              </div>
+
+                              {/* Particle Density */}
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[11px] font-semibold text-foreground">
+                                  <span>Particle Density</span>
+                                  <span className="text-primary font-bold">{activeP.projectionParticleDensity ?? 50}</span>
+                                </div>
+                                <input
+                                  type="range"
+                                  min="10"
+                                  max="100"
+                                  step="5"
+                                  value={activeP.projectionParticleDensity ?? 50}
+                                  onChange={e => updatePresetField('projectionParticleDensity', parseInt(e.target.value))}
+                                  className="w-full accent-primary scale-90"
+                                />
+                              </div>
+
+                              {/* Particle Color */}
+                              <div className="space-y-1">
+                                <label className="text-[11px] font-semibold text-foreground">Particle Theme Color</label>
+                                <select
+                                  value={activeP.projectionParticleColor ?? 'gold'}
+                                  onChange={e => updatePresetField('projectionParticleColor', e.target.value)}
+                                  className="w-full text-xs p-1 bg-card border rounded outline-none"
+                                >
+                                  <option value="gold">Warm Gold</option>
+                                  <option value="white">Shimmering White</option>
+                                  <option value="blue">Deep Sapphire Blue</option>
+                                  <option value="rainbow">Chromatic Rainbow</option>
+                                </select>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Preset Video Settings */}
+                          {activeP.projectionBgMode === 'video' && (
+                            <div className="space-y-2 p-2 bg-muted/30 border border-border/60 rounded-md">
+                              <label className="text-[11px] font-semibold text-foreground block">Looping Video Background</label>
+                              
+                              {activeP.projectionBgVideo ? (
+                                <div className="flex flex-col gap-1.5 p-1.5 bg-card border border-border rounded-md">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="truncate max-w-[120px] font-mono text-muted-foreground" title={activeP.projectionBgVideo}>
+                                      {activeP.projectionBgVideo.split(/[/\\]/).pop()}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => updatePresetField('projectionBgVideo', '')}
+                                      className="text-red-500 hover:text-red-600 font-semibold"
+                                    >
+                                      Clear
+                                    </button>
+                                  </div>
+                                  <video
+                                    src={`file://${activeP.projectionBgVideo}`}
+                                    autoPlay
+                                    loop
+                                    muted
+                                    className="aspect-video w-full object-cover rounded border border-border/60"
+                                  />
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-muted-foreground italic">No preset video uploaded.</p>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  if (window.api && window.api.uploadBgVideo) {
+                                    const path = await window.api.uploadBgVideo();
+                                    if (path) {
+                                      updatePresetField('projectionBgVideo', path);
+                                    }
+                                  }
+                                }}
+                                className="flex items-center justify-center gap-1 w-full py-1 border border-dashed border-border rounded text-[10px] font-semibold cursor-pointer hover:bg-muted/30 transition-colors"
+                              >
+                                <Upload className="w-3 h-3" />
+                                <span>Upload Preset Video</span>
+                              </button>
                             </div>
                           )}
 

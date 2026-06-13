@@ -70,7 +70,7 @@ interface AppSettings {
   theme: string;
   whisperUrl: string;
   projectionBgColor: string;
-  projectionBgMode: 'color' | 'image' | 'gradient';
+  projectionBgMode: 'color' | 'image' | 'gradient' | 'motion' | 'video';
   projectionBgImage: string;
   projectionBgGradient: string;
   projectionFontFamily: string;
@@ -87,6 +87,12 @@ interface AppSettings {
   preset_custom: any;
   isNoiseGateEnabled: boolean;
   noiseGateThreshold: number;
+
+  // Rich Theme and Background settings
+  projectionParticleSpeed: number;
+  projectionParticleDensity: number;
+  projectionParticleColor: 'gold' | 'white' | 'blue' | 'rainbow';
+  projectionBgVideo: string;
 }
 
 interface Window {
@@ -125,6 +131,7 @@ interface Window {
     // Persistent Settings
     getSettings: () => Promise<AppSettings>;
     setSettings: (key: keyof AppSettings, value: AppSettings[keyof AppSettings]) => Promise<AppSettings>;
+    uploadBgVideo: () => Promise<string | null>;
     getNetworkInfo: () => Promise<NetworkInfo | null>;
     hasEnvKey: () => Promise<boolean>;
     hasGroqEnvKey: () => Promise<boolean>;

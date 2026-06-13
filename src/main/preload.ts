@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('api', {
   // Persistent Settings (electron-store)
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (key: string, value: any) => ipcRenderer.invoke('settings:set', key, value),
+  uploadBgVideo: () => ipcRenderer.invoke('settings:upload-bg-video'),
   getNetworkInfo: () => ipcRenderer.invoke('settings:get-network'),
   hasEnvKey: () => ipcRenderer.invoke('settings:has-env-key'),
   hasGroqEnvKey: () => ipcRenderer.invoke('settings:has-groq-env-key'),

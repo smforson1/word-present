@@ -42,6 +42,12 @@ const store = new Store({
     // Speech Model Manager
     selectedSpeechModel: 'Xenova/whisper-base.en',
 
+    // Rich Theme & Motion settings
+    projectionParticleSpeed: 0.5,
+    projectionParticleDensity: 50,
+    projectionParticleColor: 'gold',
+    projectionBgVideo: '',
+
     // Style Presets
     preset_scripture: {
       fontSizeScale: 1.0,
@@ -49,7 +55,11 @@ const store = new Store({
       projectionBgColor: '#000000',
       projectionBgGradient: 'twilight',
       projectionBgImage: '',
-      projectionFontFamily: 'serif'
+      projectionFontFamily: 'serif',
+      projectionParticleSpeed: 0.5,
+      projectionParticleDensity: 50,
+      projectionParticleColor: 'gold',
+      projectionBgVideo: ''
     },
     preset_song: {
       fontSizeScale: 1.2,
@@ -57,7 +67,11 @@ const store = new Store({
       projectionBgColor: '#000000',
       projectionBgGradient: 'twilight',
       projectionBgImage: '',
-      projectionFontFamily: 'sans-serif'
+      projectionFontFamily: 'sans-serif',
+      projectionParticleSpeed: 0.5,
+      projectionParticleDensity: 50,
+      projectionParticleColor: 'gold',
+      projectionBgVideo: ''
     },
     preset_announcement: {
       fontSizeScale: 1.0,
@@ -65,7 +79,11 @@ const store = new Store({
       projectionBgColor: '#0f172a',
       projectionBgGradient: 'twilight',
       projectionBgImage: '',
-      projectionFontFamily: 'sans-serif'
+      projectionFontFamily: 'sans-serif',
+      projectionParticleSpeed: 0.5,
+      projectionParticleDensity: 50,
+      projectionParticleColor: 'gold',
+      projectionBgVideo: ''
     },
     preset_custom: {
       fontSizeScale: 1.0,
@@ -73,7 +91,11 @@ const store = new Store({
       projectionBgColor: '#000000',
       projectionBgGradient: 'twilight',
       projectionBgImage: '',
-      projectionFontFamily: 'serif'
+      projectionFontFamily: 'serif',
+      projectionParticleSpeed: 0.5,
+      projectionParticleDensity: 50,
+      projectionParticleColor: 'gold',
+      projectionBgVideo: ''
     },
 
     // Noise Gate Settings
@@ -256,7 +278,8 @@ function createWindows() {
     webPreferences: {
       preload: join(__dirname, 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false
     },
     title: 'Scripture Presenter - Projection Screen'
   });
@@ -514,10 +537,35 @@ function setupIpcHandlers() {
     if (key === 'theme' || key === 'projectionBgColor' || key === 'projectionBgMode' || key === 'projectionBgImage' ||
         key === 'projectionBgGradient' || key === 'projectionFontFamily' || key === 'showVerseNumbers' || key === 'fontSizeScale' ||
         key === 'secondaryTranslation' || key === 'isDualProjectionEnabled' ||
+        key === 'projectionParticleSpeed' || key === 'projectionParticleDensity' || key === 'projectionParticleColor' || key === 'projectionBgVideo' ||
         key.startsWith('preset_') || key === 'isNoiseGateEnabled' || key === 'noiseGateThreshold') {
       broadcastSync('sync:status', { [key]: value });
     }
     return store.store;
+  });
+
+  ipcMain.handle('settings:upload-bg-video', async () => {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: 'Select Background Looping Video',
+      filters: [{ name: 'Video Files', extensions: ['mp4', 'webm'] }],
+      properties: ['openFile']
+    });
+    if (!filePaths || filePaths.length === 0) return null;
+    const srcPath = filePaths[0];
+    try {
+      const ext = srcPath.split('.').pop() || 'mp4';
+      const targetDir = app.getPath('userData');
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      const filename = `bg-video-${Date.now()}.${ext}`;
+      const targetPath = join(targetDir, filename);
+      fs.copyFileSync(srcPath, targetPath);
+      return targetPath;
+    } catch (e: any) {
+      console.error('[upload-bg-video] Copy file failed:', e);
+      return null;
+    }
   });
 
   // PDF Export
