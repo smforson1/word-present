@@ -10,7 +10,7 @@ import { config as loadDotEnv } from 'dotenv';
 import { BibleDatabase } from './db';
 import { detectScriptureReferences, mightContainScriptureReference } from './claude';
 import { detectScriptureReferencesOffline, formatScripturesInText } from './scripture-detector';
-import { exportSessionPdf, ExportedVerse } from './pdf-export';
+import { exportSessionPdf, ExportedVerse, exportSermonReportPdf } from './pdf-export';
 import { dialog } from 'electron';
 import { downloadOpenSourceTranslation, importLocalFile } from './translation-manager';
 import { initSpeechEngine, transcribeChunk, isSpeechEngineReady, getDownloadedModels, deleteModelFiles } from './speech-engine';
@@ -100,7 +100,10 @@ const store = new Store({
 
     // Noise Gate Settings
     isNoiseGateEnabled: true,
-    noiseGateThreshold: 0.003
+    noiseGateThreshold: 0.003,
+
+    // Sermon Summary Settings
+    isSermonLoggingEnabled: true
   }
 });
 
@@ -538,7 +541,7 @@ function setupIpcHandlers() {
         key === 'projectionBgGradient' || key === 'projectionFontFamily' || key === 'showVerseNumbers' || key === 'fontSizeScale' ||
         key === 'secondaryTranslation' || key === 'isDualProjectionEnabled' ||
         key === 'projectionParticleSpeed' || key === 'projectionParticleDensity' || key === 'projectionParticleColor' || key === 'projectionBgVideo' ||
-        key.startsWith('preset_') || key === 'isNoiseGateEnabled' || key === 'noiseGateThreshold') {
+        key.startsWith('preset_') || key === 'isNoiseGateEnabled' || key === 'noiseGateThreshold' || key === 'isSermonLoggingEnabled') {
       broadcastSync('sync:status', { [key]: value });
     }
     return store.store;
@@ -566,6 +569,130 @@ function setupIpcHandlers() {
       console.error('[upload-bg-video] Copy file failed:', e);
       return null;
     }
+  });
+
+  ipcMain.handle('ai:generate-sermon-summary', async (_, transcriptText: string, scriptures: { reference: string; text: string }[]) => {
+    const groqApiKey = (process.env.GROQ_API_KEY || store.get('groqApiKey') || '') as string;
+    const anthropicApiKey = (process.env.ANTHROPIC_API_KEY || store.get('anthropicApiKey') || '') as string;
+
+    const scripturesListStr = scriptures.map((s, idx) => `${idx + 1}. ${s.reference}: "${s.text}"`).join('\n');
+
+    const prompt = `You are a helpful assistant assisting a church preacher and media team.
+Generate a structured, professional, and beautiful sermon report based on the following transcribed sermon audio and the list of scriptures that were projected during the service.
+
+Here is the sermon transcript:
+"""
+${transcriptText}
+"""
+
+Here are the projected scriptures:
+"""
+${scripturesListStr}
+"""
+
+Please structure your output in clean Markdown with the following sections:
+1. # Sermon Title (Inferred from content)
+2. ## Key Themes & Takeaways (Provide 3-4 bullet points highlighting the core messages)
+3. ## Outlined Sermon Summary (A clear, readable outline of the sermon, synthesizing what was taught)
+4. ## Scripture Sheet (List all the scriptures, briefly explaining how each scripture was utilized or fits into the themes)
+
+Keep the tone encouraging, theological, and clear. Do not include any meta-introductions or outro text. Output only the markdown.`;
+
+    if (anthropicApiKey.trim()) {
+      try {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': anthropicApiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'claude-3-5-sonnet-20241022',
+            max_tokens: 2000,
+            messages: [{ role: 'user', content: prompt }]
+          })
+        });
+
+        if (response.ok) {
+          const data: any = await response.json();
+          const result = data?.content?.[0]?.text;
+          if (result) return result;
+        } else {
+          console.error('[AI Summary] Claude API error:', await response.text());
+        }
+      } catch (err) {
+        console.error('[AI Summary] Claude connection error:', err);
+      }
+    }
+
+    if (groqApiKey.trim()) {
+      try {
+        const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${groqApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'llama3-70b-8192',
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.5,
+            max_tokens: 2000
+          })
+        });
+
+        if (response.ok) {
+          const data: any = await response.json();
+          const result = data?.choices?.[0]?.message?.content;
+          if (result) return result;
+        } else {
+          console.error('[AI Summary] Groq API error:', await response.text());
+        }
+      } catch (err) {
+        console.error('[AI Summary] Groq connection error:', err);
+      }
+    }
+
+    const words = transcriptText.toLowerCase().split(/\s+/).filter(w => w.length > 4);
+    const stopwords = new Set(['about', 'their', 'there', 'would', 'could', 'should', 'these', 'those', 'where', 'which', 'after', 'before']);
+    const freqs: Record<string, number> = {};
+    words.forEach(w => {
+      if (!stopwords.has(w)) {
+        freqs[w] = (freqs[w] || 0) + 1;
+      }
+    });
+    const sortedTopics = Object.entries(freqs)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(entry => entry[0].charAt(0).toUpperCase() + entry[0].slice(1));
+
+    const topicList = sortedTopics.length > 0 ? sortedTopics.join(', ') : 'Sermon Teachings';
+
+    const offlineMarkdown = `# Sermon Summary Report (${new Date().toLocaleDateString()})
+
+## Key Themes & Takeaways
+* **Core Topics Focused:** ${topicList}
+* **Scripture Emphasis:** The service centered on biblical teaching and scripture reading.
+* **Congregational Reflection:** Meditating on the Word of God to apply it to daily living.
+
+## Outlined Sermon Summary
+* **Introduction:** Opening prayer and reading of selected scripture texts.
+* **Core Message:** Detailed study of the themes surrounding the topics of: ${topicList}.
+* **Conclusion & Call to Action:** Applying the sermon messages in our families and daily interactions.
+
+## Scripture Sheet
+${scriptures.length > 0 
+  ? scriptures.map((s) => `* **${s.reference}**: "${s.text}"`).join('\n')
+  : '* No scriptures were projected during the service.'}
+
+*Note: Generating full summaries requires setting up an Anthropic or Groq API key in Settings.*`;
+
+    return offlineMarkdown;
+  });
+
+  ipcMain.handle('sermon:export-pdf', async (_, markdownText: string) => {
+    return exportSermonReportPdf(markdownText);
   });
 
   // PDF Export

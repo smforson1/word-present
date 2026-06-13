@@ -55,6 +55,8 @@ contextBridge.exposeInMainWorld('api', {
 
   // Session Logging
   exportSessionPdf: (verses: any[]) => ipcRenderer.invoke('session:export-pdf', verses),
+  generateSermonSummary: (transcriptText: string, scriptures: any[]) => ipcRenderer.invoke('ai:generate-sermon-summary', transcriptText, scriptures),
+  exportSermonPdf: (markdownText: string) => ipcRenderer.invoke('sermon:export-pdf', markdownText),
 
   // Schedule Save/Load
   saveSchedule: (scheduleData: string) => ipcRenderer.invoke('schedule:save', scheduleData),

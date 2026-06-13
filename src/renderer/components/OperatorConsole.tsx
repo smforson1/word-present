@@ -3,7 +3,7 @@ import {
   Mic, MicOff, Tv, Volume2, 
   Send, Trash2, Moon, Sun, AlertTriangle, CheckCircle, Info, Power,
   BookOpen, Search as SearchIcon, Upload, ChevronLeft, ChevronRight,
-  Music
+  Music, FileText
 } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -104,6 +104,16 @@ export default function OperatorConsole() {
   const [projectionParticleColor, setProjectionParticleColor] = useState<'gold' | 'white' | 'blue' | 'rainbow'>('gold');
   const [projectionBgVideo, setProjectionBgVideo] = useState('');
 
+  // Sermon Summary Settings State
+  const [isSermonLoggingEnabled, setIsSermonLoggingEnabledState] = useState(true);
+  const isSermonLoggingEnabledRef = useRef(true);
+
+  const setIsSermonLoggingEnabled = (val: boolean) => {
+    setIsSermonLoggingEnabledState(val);
+    isSermonLoggingEnabledRef.current = val;
+    if (window.api) window.api.setSettings('isSermonLoggingEnabled', val);
+  };
+
   // Network Pairing State
   const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string; tunnelUrl?: string } | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -184,8 +194,13 @@ export default function OperatorConsole() {
   const [bookmarkLabel, setBookmarkLabel] = useState('');
 
   // Layout State
-  const [middleTab, setMiddleTab] = useState<'browser' | 'search' | 'manual' | 'ai' | 'songs'>('browser');
+  const [middleTab, setMiddleTab] = useState<'browser' | 'search' | 'manual' | 'ai' | 'songs' | 'sermon'>('browser');
   const [rightTab, setRightTab] = useState<'schedule' | 'bookmarks' | 'history' | 'settings'>('schedule');
+
+  // Sermon Summary States
+  const [sermonTranscript, setSermonTranscript] = useState('');
+  const [sermonSummary, setSermonSummary] = useState('');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
   // Refs
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -263,6 +278,9 @@ export default function OperatorConsole() {
       setProjectionFontFamily(settings.projectionFontFamily || 'serif');
       setShowVerseNumbers(settings.showVerseNumbers || false);
       setAiMode(settings.aiMode || 'auto-project');
+      const sermonLoggingOn = settings.isSermonLoggingEnabled !== undefined ? settings.isSermonLoggingEnabled : true;
+      setIsSermonLoggingEnabledState(sermonLoggingOn);
+      isSermonLoggingEnabledRef.current = sermonLoggingOn;
       if (settings.projectionParticleSpeed !== undefined) setProjectionParticleSpeed(settings.projectionParticleSpeed);
       if (settings.projectionParticleDensity !== undefined) setProjectionParticleDensity(settings.projectionParticleDensity);
       if (settings.projectionParticleColor) setProjectionParticleColor(settings.projectionParticleColor);
@@ -555,6 +573,9 @@ export default function OperatorConsole() {
         if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
         setIsFading(false);
         setTranscript(prev => (prev ? prev + ' ' : '') + text);
+        if (isSermonLoggingEnabledRef.current) {
+          setSermonTranscript(prev => (prev ? prev + ' \n' : '') + text);
+        }
         triggerAIDetection(text);
         subtitleTimeoutRef.current = setTimeout(() => {
           setIsFading(true);
@@ -1388,6 +1409,7 @@ export default function OperatorConsole() {
             <button onClick={() => setMiddleTab('search')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'search' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><SearchIcon className="w-4 h-4" /> Search</button>
             <button onClick={() => setMiddleTab('manual')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'manual' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><Send className="w-4 h-4" /> Manual</button>
             <button onClick={() => setMiddleTab('songs')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'songs' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><Music className="w-4 h-4" /> Songs</button>
+            <button onClick={() => setMiddleTab('sermon')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'sermon' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><FileText className="w-4 h-4" /> Sermon Report</button>
             <button onClick={() => setMiddleTab('ai')} className={`px-4 py-2 text-sm font-semibold border-b-2 flex gap-1 items-center transition-colors ${middleTab === 'ai' ? 'border-gold text-gold bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}><CheckCircle className="w-4 h-4" /> AI Logs</button>
           </div>
 
@@ -1414,6 +1436,111 @@ export default function OperatorConsole() {
                       <span className={log.type === 'error' ? 'text-rose-500' : log.type === 'success' ? 'text-emerald-500' : log.type === 'warning' ? 'text-amber-500' : 'text-blue-500'}>{log.message}</span>
                     </div>
                   )) : <div className="text-muted-foreground text-center py-4">No AI logs.</div>}
+                </div>
+              </div>
+            )}
+            {middleTab === 'sermon' && (
+              <div className="p-4 h-full flex flex-col space-y-4 overflow-y-auto">
+                <div className="flex justify-between items-center shrink-0">
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Sermon Summary & Scripture Sheets</h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setSermonTranscript('');
+                        setSermonSummary('');
+                      }}
+                      className="px-3 py-1.5 border border-border hover:bg-muted text-xs font-semibold rounded transition-colors text-foreground"
+                    >
+                      Reset Session
+                    </button>
+                  </div>
+                </div>
+
+                {!isSermonLoggingEnabled && (
+                  <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-600 dark:text-amber-400 text-xs shrink-0">
+                    <span className="text-lg">⚠️</span>
+                    <div className="flex-grow">
+                      <p className="font-semibold">Sermon transcript logging is currently disabled.</p>
+                      <p className="opacity-90">Real-time transcripts will not be saved for summary sheets. You can enable logging in the Settings tab.</p>
+                    </div>
+                    <button
+                      onClick={() => setIsSermonLoggingEnabled(true)}
+                      className="px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 active:bg-amber-500/40 text-amber-700 dark:text-amber-300 font-bold rounded transition-colors"
+                    >
+                      Enable Now
+                    </button>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-4 flex-grow overflow-hidden min-h-[350px]">
+                  {/* Left Column: Sermon Transcript */}
+                  <div className="flex flex-col space-y-2 border border-border rounded-lg bg-card p-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold text-foreground">Sermon Transcript Log</label>
+                      <span className="text-[10px] text-muted-foreground">{sermonTranscript.trim().split(/\s+/).filter(Boolean).length} words</span>
+                    </div>
+                    <textarea
+                      value={sermonTranscript}
+                      onChange={(e) => setSermonTranscript(e.target.value)}
+                      className="flex-grow w-full p-2 bg-background border border-border rounded text-xs font-sans resize-none outline-none focus:ring-1 focus:ring-primary/50 custom-scrollbar text-foreground"
+                      placeholder="Transcribed sermon audio will accumulate here in real-time. You can also edit this text manually..."
+                    />
+                  </div>
+
+                  {/* Right Column: Generated Sermon Report */}
+                  <div className="flex flex-col space-y-2 border border-border rounded-lg bg-card p-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-xs font-bold text-foreground">Sermon Report & Scripture Sheet</label>
+                      {sermonSummary && (
+                        <button
+                          onClick={async () => {
+                            if (window.api && window.api.exportSermonPdf) {
+                              const success = await window.api.exportSermonPdf(sermonSummary);
+                              if (success) addAiLog('success', 'Sermon PDF report exported successfully.');
+                            }
+                          }}
+                          className="text-primary hover:underline text-xs font-semibold"
+                        >
+                          Export PDF
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="flex-grow bg-background border border-border rounded p-2 overflow-y-auto text-xs whitespace-pre-wrap font-sans custom-scrollbar select-text selection:bg-primary/20 text-foreground">
+                      {isGeneratingSummary ? (
+                        <div className="h-full flex flex-col items-center justify-center space-y-2">
+                          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                          <span className="text-muted-foreground animate-pulse text-xs">Analyzing transcript & compiling scriptures...</span>
+                        </div>
+                      ) : sermonSummary ? (
+                        sermonSummary
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-center p-4">
+                          <p className="text-muted-foreground italic mb-3 text-xs">No sermon report generated yet.</p>
+                          <button
+                            onClick={async () => {
+                              setIsGeneratingSummary(true);
+                              try {
+                                if (window.api && window.api.generateSermonSummary) {
+                                  const listScriptures = history.map(item => ({ reference: item.reference, text: item.text }));
+                                  const result = await window.api.generateSermonSummary(sermonTranscript, listScriptures);
+                                  setSermonSummary(result);
+                                }
+                              } catch (err: any) {
+                                console.error('Failed to generate summary:', err);
+                              } finally {
+                                setIsGeneratingSummary(false);
+                              }
+                            }}
+                            className="bg-primary text-primary-foreground px-4 py-2 rounded font-bold text-xs hover:opacity-90 transition-opacity"
+                            disabled={!sermonTranscript.trim()}
+                          >
+                            Generate Sermon Report
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
@@ -1686,6 +1813,16 @@ export default function OperatorConsole() {
 
                 <div className="space-y-3">
                   <h3 className="text-xs font-bold uppercase text-muted-foreground border-b pb-1">AI & Speech Detection</h3>
+
+                  <div className="flex items-center justify-between border-b border-border/50 pb-2">
+                    <label className="text-xs font-semibold text-foreground">Enable Sermon Logging (Speech Summary)</label>
+                    <input 
+                      type="checkbox" 
+                      checked={isSermonLoggingEnabled} 
+                      onChange={(e) => setIsSermonLoggingEnabled(e.target.checked)}
+                      className="h-4 w-4 bg-card border rounded accent-primary outline-none cursor-pointer"
+                    />
+                  </div>
 
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-foreground">Anthropic API Key</label>

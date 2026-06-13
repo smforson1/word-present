@@ -87,6 +87,7 @@ interface AppSettings {
   preset_custom: any;
   isNoiseGateEnabled: boolean;
   noiseGateThreshold: number;
+  isSermonLoggingEnabled: boolean;
 
   // Rich Theme and Background settings
   projectionParticleSpeed: number;
@@ -143,6 +144,8 @@ interface Window {
 
     // Session Logging
     exportSessionPdf: (verses: ProjectionData[]) => Promise<boolean>;
+    generateSermonSummary: (transcriptText: string, scriptures: { reference: string; text: string }[]) => Promise<string>;
+    exportSermonPdf: (markdownText: string) => Promise<boolean>;
 
     // Schedule Save/Load
     saveSchedule: (scheduleData: string) => Promise<boolean>;

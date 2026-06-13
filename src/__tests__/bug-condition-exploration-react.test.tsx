@@ -54,6 +54,8 @@ const makeApiMock = (overrides: Partial<typeof window.api> = {}) => ({
   setSettings: vi.fn().mockResolvedValue({}),
   uploadBgVideo: vi.fn().mockResolvedValue(null),
   exportSessionPdf: vi.fn().mockResolvedValue(true),
+  generateSermonSummary: vi.fn().mockResolvedValue('Mocked summary content'),
+  exportSermonPdf: vi.fn().mockResolvedValue(true),
   saveSchedule: vi.fn().mockResolvedValue(true),
   loadSchedule: vi.fn().mockResolvedValue(null),
   onProjectUpdate: vi.fn().mockReturnValue(() => {}),
@@ -571,4 +573,85 @@ describe('Gap 5 — Bookmark Label Modal Missing', () => {
       }
     }
   );
+
+  it('should toggle sermon transcript logging and show warning notice when disabled', async () => {
+    vi.resetModules();
+    const { default: OperatorConsole } = await import('../renderer/components/OperatorConsole');
+
+    const getSettingsMock = vi.fn().mockResolvedValue({
+      isSermonLoggingEnabled: true
+    });
+    const setSettingsMock = vi.fn().mockResolvedValue({});
+
+    window.api = makeApiMock({
+      getSettings: getSettingsMock,
+      setSettings: setSettingsMock
+    });
+
+    render(React.createElement(OperatorConsole));
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    // Switch to Sermon Report tab
+    await act(async () => {
+      const sermonTab = screen.queryByText('Sermon Report');
+      if (sermonTab) fireEvent.click(sermonTab);
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(screen.queryByText(/sermon transcript logging is currently disabled/i)).toBeNull();
+
+    // Switch to Settings tab
+    await act(async () => {
+      const settingsTab = screen.queryByText('Settings');
+      if (settingsTab) fireEvent.click(settingsTab);
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    const toggleCheckbox = screen.queryByText(/Enable Sermon Logging/i)?.closest('div')?.querySelector('input[type="checkbox"]');
+    expect(toggleCheckbox).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(toggleCheckbox!);
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(setSettingsMock).toHaveBeenCalledWith('isSermonLoggingEnabled', false);
+
+    // Switch to Sermon Report tab
+    await act(async () => {
+      const sermonTab = screen.queryByText('Sermon Report');
+      if (sermonTab) fireEvent.click(sermonTab);
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(screen.queryByText(/sermon transcript logging is currently disabled/i)).toBeTruthy();
+
+    const enableNowBtn = screen.queryByText(/Enable Now/i);
+    expect(enableNowBtn).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(enableNowBtn!);
+    });
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+
+    expect(screen.queryByText(/sermon transcript logging is currently disabled/i)).toBeNull();
+  });
 });
