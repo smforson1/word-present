@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
   transcribeChunk: (wavBuffer: Uint8Array) => ipcRenderer.invoke('speech:transcribe-chunk', wavBuffer),
   getSpeechModelsStatus: () => ipcRenderer.invoke('speech:get-models-status'),
   deleteSpeechModel: (modelName: string) => ipcRenderer.invoke('speech:delete-model', modelName),
+  formatText: (text: string) => ipcRenderer.invoke('speech:format-text', text),
   onSpeechInitProgress: (callback: (event: any, data: { status: string; detail?: string }) => void) => {
     ipcRenderer.on('speech:init-progress', callback);
     return () => ipcRenderer.removeListener('speech:init-progress', callback);

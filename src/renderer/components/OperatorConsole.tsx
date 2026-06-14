@@ -12,6 +12,7 @@ import SearchPanel from './SearchPanel';
 import BookmarksPanel from './BookmarksPanel';
 import ServiceSchedule, { ScheduleItem } from './ServiceSchedule';
 import SongsPanel from './SongsPanel';
+import { TranscriptStitcher } from './transcriptStitcher';
 
 interface ScriptureHistoryItem {
   timestamp: string;
@@ -114,6 +115,20 @@ export default function OperatorConsole() {
     if (window.api) window.api.setSettings('isSermonLoggingEnabled', val);
   };
 
+  // Audio Chunk Interval State
+  const [audioChunkInterval, setAudioChunkIntervalState] = useState(3);
+  const audioChunkIntervalRef = useRef(3);
+
+  const setAudioChunkInterval = (val: number) => {
+    setAudioChunkIntervalState(val);
+    audioChunkIntervalRef.current = val;
+    if (window.api) window.api.setSettings('audioChunkInterval', val);
+    stitcherRef.current.setChunkSize(val);
+  };
+
+  const recognitionRef = useRef<any>(null);
+  const stitcherRef = useRef<TranscriptStitcher>(new TranscriptStitcher(3));
+
   // Network Pairing State
   const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string; tunnelUrl?: string } | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
@@ -136,7 +151,7 @@ export default function OperatorConsole() {
   const [modelProgressDetail, setModelProgressDetail] = useState('');
   const [speechModelsStatus, setSpeechModelsStatus] = useState<{ downloaded: string[]; activeModel: string }>({
     downloaded: [],
-    activeModel: 'Xenova/whisper-base.en'
+    activeModel: 'web-speech-api'
   });
   const [aiLogs, setAiLogs] = useState<AILogItem[]>([]);
   const [activeProjected, setActiveProjected] = useState<{ reference: string; text: string; translation: string; secondaryText?: string; secondaryTranslation?: string; slideType?: string; preset?: any } | null>(null);
@@ -281,6 +296,10 @@ export default function OperatorConsole() {
       const sermonLoggingOn = settings.isSermonLoggingEnabled !== undefined ? settings.isSermonLoggingEnabled : true;
       setIsSermonLoggingEnabledState(sermonLoggingOn);
       isSermonLoggingEnabledRef.current = sermonLoggingOn;
+      const chunkInterval = settings.audioChunkInterval !== undefined ? settings.audioChunkInterval : 3;
+      setAudioChunkIntervalState(chunkInterval);
+      audioChunkIntervalRef.current = chunkInterval;
+      stitcherRef.current.setChunkSize(chunkInterval);
       if (settings.projectionParticleSpeed !== undefined) setProjectionParticleSpeed(settings.projectionParticleSpeed);
       if (settings.projectionParticleDensity !== undefined) setProjectionParticleDensity(settings.projectionParticleDensity);
       if (settings.projectionParticleColor) setProjectionParticleColor(settings.projectionParticleColor);
@@ -546,7 +565,7 @@ export default function OperatorConsole() {
   // ── Audio chunk → Whisper transcription via main process IPC ────────────
   // Receives raw Float32 PCM at 16 kHz directly from the ScriptProcessorNode —
   // no WebM decoding step, no blob handling, no fragility.
-  const processAudioChunk = async (samples: Float32Array) => {
+  const processAudioChunk = async (samples: Float32Array, chunkIndex: number) => {
     if (!isRecordingRef.current) return;
     try {
       // RMS energy gate — skip chunks that are just background silence
@@ -558,7 +577,7 @@ export default function OperatorConsole() {
         return;
       }
 
-      console.log(`[AudioProcessor] Sending ${samples.length} samples (rms=${rms.toFixed(4)})`);
+      console.log(`[AudioProcessor] Sending chunk ${chunkIndex} (${samples.length} samples, rms=${rms.toFixed(4)})`);
       setInterimTranscript('…');
 
       // Encode raw PCM as a WAV file — main process parses the header to get Int16 samples
@@ -566,17 +585,28 @@ export default function OperatorConsole() {
       const wavUint8 = new Uint8Array(wavBuffer);
 
       const text = await window.api.transcribeChunk(wavUint8);
-      console.log(`[AudioProcessor] Transcribed: "${text}"`);
+      console.log(`[AudioProcessor] Transcribed chunk ${chunkIndex}: "${text}"`);
 
       setInterimTranscript('');
-      if (text && text.length > 1 && isRecordingRef.current) {
+      
+      // Stitch the new chunk
+      const stitchedText = stitcherRef.current.ingest({ chunkIndex, text });
+      console.log(`[AudioProcessor] Stitched text: "${stitchedText}"`);
+
+      if (stitchedText && stitchedText.length > 0 && isRecordingRef.current) {
         if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
         setIsFading(false);
-        setTranscript(prev => (prev ? prev + ' ' : '') + text);
+        
+        // Subtitles show the latest stitched segment
+        setTranscript(stitchedText);
+        
+        // Append the stitched words to the sermon log
         if (isSermonLoggingEnabledRef.current) {
-          setSermonTranscript(prev => (prev ? prev + ' \n' : '') + text);
+          setSermonTranscript(prev => (prev ? prev + ' ' : '') + stitchedText);
         }
-        triggerAIDetection(text);
+        
+        triggerAIDetection(stitchedText);
+        
         subtitleTimeoutRef.current = setTimeout(() => {
           setIsFading(true);
           setTimeout(() => {
@@ -647,11 +677,13 @@ export default function OperatorConsole() {
       await audioCtx.audioWorklet.addModule('/audio-chunk-processor.js');
       const workletNode = new AudioWorkletNode(audioCtx, 'audio-chunk-processor');
       processorRef.current = workletNode as unknown as ScriptProcessorNode;
+      workletNode.port.postMessage({ type: 'set-chunk-size', value: 16000 * audioChunkIntervalRef.current });
 
       workletNode.port.onmessage = (event) => {
         if (event.data?.type === 'chunk' && isRecordingRef.current) {
           const samples = new Float32Array(event.data.data);
-          processAudioChunk(samples);
+          const chunkIndex = event.data.chunkIndex ?? 0;
+          processAudioChunk(samples, chunkIndex);
         }
       };
 
@@ -714,13 +746,132 @@ export default function OperatorConsole() {
     }
   };
 
+  const startWebSpeech = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      addAiLog('error', 'Web Speech API is not supported in this environment.');
+      setIsRecording(false);
+      return;
+    }
+    
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch { /* ignore */ }
+    }
+
+    const rec = new SpeechRecognition();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = 'en-US';
+
+    rec.onstart = () => {
+      addAiLog('success', 'Listening via Browser Built-in Web Speech API…');
+    };
+
+    rec.onerror = (e: any) => {
+      console.error('[WebSpeech] error:', e);
+      addAiLog('warning', `Browser Speech Recognition error: ${e.error ?? 'unknown'}`);
+    };
+
+    rec.onend = () => {
+      if (isRecordingRef.current) {
+        try { rec.start(); } catch { /* ignore */ }
+      }
+    };
+
+    rec.onresult = (event: any) => {
+      let interim = '';
+      let final = '';
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        if (event.results[i].isFinal) {
+          final += event.results[i][0].transcript;
+        } else {
+          interim += event.results[i][0].transcript;
+        }
+      }
+
+      if (interim) {
+        setInterimTranscript(interim);
+      }
+      if (final) {
+        const text = final.trim();
+        if (text) {
+          console.log(`[WebSpeech] Transcribed raw: "${text}"`);
+          setInterimTranscript('');
+          
+          if (subtitleTimeoutRef.current) clearTimeout(subtitleTimeoutRef.current);
+          setIsFading(false);
+
+          window.api.formatText(text).then((formattedText: string) => {
+            console.log(`[WebSpeech] Transcribed formatted: "${formattedText}"`);
+            setTranscript(prev => (prev ? prev + ' ' : '') + formattedText);
+            
+            if (isSermonLoggingEnabledRef.current) {
+              setSermonTranscript(prev => (prev ? prev + ' \n' : '') + formattedText);
+            }
+            triggerAIDetection(formattedText);
+
+            subtitleTimeoutRef.current = setTimeout(() => {
+              setIsFading(true);
+              setTimeout(() => {
+                setTranscript('');
+                setDetectedRefs([]);
+                setIsFading(false);
+              }, 500);
+            }, 3000);
+          }).catch((err) => {
+            console.error('[WebSpeech] format failed:', err);
+            setTranscript(prev => (prev ? prev + ' ' : '') + text);
+            if (isSermonLoggingEnabledRef.current) {
+              setSermonTranscript(prev => (prev ? prev + ' \n' : '') + text);
+            }
+            triggerAIDetection(text);
+
+            subtitleTimeoutRef.current = setTimeout(() => {
+              setIsFading(true);
+              setTimeout(() => {
+                setTranscript('');
+                setDetectedRefs([]);
+                setIsFading(false);
+              }, 500);
+            }, 3000);
+          });
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
+    try {
+      rec.start();
+    } catch (err: any) {
+      console.error('[WebSpeech] start failed:', err);
+      addAiLog('error', `Failed to start Web Speech API: ${err?.message ?? err}`);
+      setIsRecording(false);
+    }
+  };
+
   const toggleMicrophone = () => {
     const nextState = !isRecordingRef.current;
     setIsRecording(nextState);
     if (nextState) {
-      startMicrophone();
+      stitcherRef.current.reset(); // RESET STITCHER STATE ON START
+      if (speechModelsStatus.activeModel === 'web-speech-api') {
+        startWebSpeech();
+      } else {
+        startMicrophone();
+      }
     } else {
-      stopMicrophone();
+      if (speechModelsStatus.activeModel === 'web-speech-api') {
+        if (recognitionRef.current) {
+          recognitionRef.current.onend = null;
+          try { recognitionRef.current.stop(); } catch { /* ignore */ }
+          recognitionRef.current = null;
+        }
+      } else {
+        stopMicrophone();
+      }
       rollingWindowRef.current = [];
       addAiLog('info', 'Microphone stopped.');
     }
@@ -1899,16 +2050,43 @@ export default function OperatorConsole() {
                       className="w-full text-xs p-2 bg-card border rounded outline-none"
                     >
                       {[
-                        { id: 'Xenova/whisper-tiny.en', label: 'Tiny (English-only) ~75MB' },
-                        { id: 'Xenova/whisper-tiny', label: 'Tiny (Multilingual) ~75MB' },
-                        { id: 'Xenova/whisper-base.en', label: 'Base (English-only) ~145MB' },
-                        { id: 'Xenova/whisper-base', label: 'Base (Multilingual) ~145MB' },
-                        { id: 'Xenova/whisper-small.en', label: 'Small (English-only) ~480MB' }
+                        { id: 'web-speech-api', label: 'Web Speech API (Built-in Browser Speech — Free)' },
+                        { id: 'local-whisper', label: 'Local Whisper Server (Free & Unlimited)' },
+                        { id: 'groq-cloud', label: 'Groq Cloud (High Accuracy & Speed)' },
+                        { id: 'Xenova/whisper-tiny.en', label: 'Tiny (English-only) ~75MB (Local, Free & Offline)' },
+                        { id: 'Xenova/whisper-tiny', label: 'Tiny (Multilingual) ~75MB (Local, Free & Offline)' },
+                        { id: 'Xenova/whisper-base.en', label: 'Base (English-only) ~145MB (Local, Free & Offline)' },
+                        { id: 'Xenova/whisper-base', label: 'Base (Multilingual) ~145MB (Local, Free & Offline)' },
+                        { id: 'Xenova/whisper-small.en', label: 'Small (English-only) ~480MB (Local, Free & Offline)' }
                       ].map(m => (
                         <option key={m.id} value={m.id}>{m.label}</option>
                       ))}
                     </select>
+                    <p className="text-[10px] text-muted-foreground leading-tight mt-1">
+                      Choose <strong>Web Speech API</strong> or any of the <strong>Local, Free & Offline</strong> Whisper models to transcribe completely free without needing any API keys or internet connection.
+                    </p>
                   </div>
+
+                  {speechModelsStatus.activeModel !== 'web-speech-api' && (
+                    <div className="space-y-1 animate-in fade-in duration-200">
+                      <label className="text-xs font-semibold text-foreground flex justify-between">
+                        <span>Audio Chunk Interval</span>
+                        <span className="text-primary font-bold">{audioChunkInterval} seconds</span>
+                      </label>
+                      <input
+                        type="range"
+                        min="2"
+                        max="6"
+                        step="1"
+                        value={audioChunkInterval}
+                        onChange={e => setAudioChunkInterval(parseInt(e.target.value, 10))}
+                        className="w-full accent-primary h-1 bg-muted rounded-lg appearance-none cursor-pointer"
+                      />
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        Shorter intervals give faster live updates. If using Groq, set to 4s or higher to stay within the free tier rate limits (Limit: 20 RPM).
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-2 pt-1 pb-2">
                     <label className="text-[11px] font-bold text-muted-foreground uppercase">Local Models Cache</label>

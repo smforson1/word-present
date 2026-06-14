@@ -88,6 +88,7 @@ interface AppSettings {
   isNoiseGateEnabled: boolean;
   noiseGateThreshold: number;
   isSermonLoggingEnabled: boolean;
+  audioChunkInterval: number;
 
   // Rich Theme and Background settings
   projectionParticleSpeed: number;
@@ -140,6 +141,7 @@ interface Window {
     transcribeChunk: (wavBuffer: Uint8Array) => Promise<string>;
     getSpeechModelsStatus: () => Promise<{ downloaded: string[], activeModel: string }>;
     deleteSpeechModel: (modelName: string) => Promise<boolean>;
+    formatText: (text: string) => Promise<string>;
     onSpeechInitProgress: (callback: (event: Electron.IpcRendererEvent, data: { status: string; detail?: string }) => void) => () => void;
 
     // Session Logging

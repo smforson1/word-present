@@ -182,8 +182,9 @@ export class BibleDatabase {
   private async initAsync(): Promise<void> {
     const SQL = await initSqlJs();
 
+    const isTest = process.env.NODE_ENV === 'test' || process.env.VITEST;
     // Load existing database file if it exists, otherwise create new
-    if (fs.existsSync(this.dbPath)) {
+    if (!isTest && fs.existsSync(this.dbPath)) {
       const fileBuffer = fs.readFileSync(this.dbPath);
       this.db = new SQL.Database(fileBuffer);
     } else {
@@ -193,7 +194,9 @@ export class BibleDatabase {
     this.initSchema();
     this.seedDatabase();
     this.seedSongs();
-    this.saveToDisk();
+    if (!isTest) {
+      this.saveToDisk();
+    }
   }
 
   /** Wait for the database to be fully initialized */
@@ -202,6 +205,7 @@ export class BibleDatabase {
   }
 
   private saveToDisk(): void {
+    if (process.env.NODE_ENV === 'test' || process.env.VITEST) return;
     if (!this.db) return;
     const data = this.db.export();
     const buffer = Buffer.from(data);

@@ -35,6 +35,7 @@ const makeApiMock = (overrides: Partial<typeof window.api> = {}) => ({
     projectionParticleDensity: 50,
     projectionParticleColor: 'gold',
     projectionBgVideo: '',
+    selectedSpeechModel: 'Xenova/whisper-base.en',
   }),
   getTranslations: vi.fn().mockResolvedValue([{ translation: 'KJV', verseCount: 31102 }]),
   getNetworkInfo: vi.fn().mockResolvedValue(null),
@@ -71,6 +72,7 @@ const makeApiMock = (overrides: Partial<typeof window.api> = {}) => ({
   transcribeChunk: vi.fn().mockResolvedValue(''),
   getSpeechModelsStatus: vi.fn().mockResolvedValue({ downloaded: [], activeModel: 'Xenova/whisper-base.en' }),
   deleteSpeechModel: vi.fn().mockResolvedValue(true),
+  formatText: vi.fn().mockImplementation(async (text) => text),
   getTranslationCatalog: vi.fn().mockResolvedValue([]),
   onSpeechInitProgress: vi.fn().mockReturnValue(() => {}),
   getSongs: vi.fn().mockResolvedValue([]),
@@ -579,7 +581,8 @@ describe('Gap 5 — Bookmark Label Modal Missing', () => {
     const { default: OperatorConsole } = await import('../renderer/components/OperatorConsole');
 
     const getSettingsMock = vi.fn().mockResolvedValue({
-      isSermonLoggingEnabled: true
+      isSermonLoggingEnabled: true,
+      selectedSpeechModel: 'Xenova/whisper-base.en'
     });
     const setSettingsMock = vi.fn().mockResolvedValue({});
 

@@ -40,7 +40,7 @@ const store = new Store({
     isDualProjectionEnabled: false,
 
     // Speech Model Manager
-    selectedSpeechModel: 'Xenova/whisper-base.en',
+    selectedSpeechModel: 'web-speech-api',
 
     // Rich Theme & Motion settings
     projectionParticleSpeed: 0.5,
@@ -848,9 +848,15 @@ ${scriptures.length > 0
 
   // Initialise the local Whisper pipeline and relay progress events to the renderer
   ipcMain.handle('speech:init', async (event) => {
-    console.log('[speech:init] starting offline Whisper engine…');
-    const selectedModel = store.get('selectedSpeechModel') as string || 'Xenova/whisper-base.en';
+    const selectedModel = store.get('selectedSpeechModel') as string || 'web-speech-api';
+    if (selectedModel === 'groq-cloud' || selectedModel === 'local-whisper' || selectedModel === 'web-speech-api') {
+      console.log(`[speech:init] ${selectedModel} engine selected. Bypassing offline Whisper.`);
+      const label = selectedModel === 'groq-cloud' ? 'Groq Cloud' : selectedModel === 'local-whisper' ? 'Local Whisper Server' : 'Browser Web Speech';
+      event.sender.send('speech:init-progress', { status: 'ready', detail: `${label} Active` });
+      return true;
+    }
 
+    console.log('[speech:init] starting offline Whisper engine…');
     const ok = await initSpeechEngine((status, detail) => {
       if (!event.sender.isDestroyed()) {
         event.sender.send('speech:init-progress', { status, detail });
@@ -865,13 +871,18 @@ ${scriptures.length > 0
     const downloaded = getDownloadedModels();
     return {
       downloaded,
-      activeModel: store.get('selectedSpeechModel') as string || 'Xenova/whisper-base.en'
+      activeModel: store.get('selectedSpeechModel') as string || 'web-speech-api'
     };
   });
 
   // Delete local model folder from cache
   ipcMain.handle('speech:delete-model', async (_, modelName: string) => {
     return deleteModelFiles(modelName);
+  });
+
+  // Format scripture references in transcript text
+  ipcMain.handle('speech:format-text', async (_, text: string) => {
+    return formatScripturesInText(text);
   });
 
   // Transcribe one audio chunk.
@@ -911,19 +922,88 @@ ${scriptures.length > 0
       return samples;
     };
 
-    // ── 1. Offline path (preferred) ──────────────────────────────────────────
-    if (isSpeechEngineReady()) {
-      const samples = parsePcmFromWav(wavBuffer);
-      if (samples.length > 0) {
-        const raw = await transcribeChunk(samples);
+    const selectedModel = store.get('selectedSpeechModel') as string || 'web-speech-api';
+
+    // ── Local Whisper Server Path ──────────────────────────────────────────
+    if (selectedModel === 'local-whisper') {
+      const whisperUrl = (store.get('whisperUrl') || 'http://localhost:8080') as string;
+      console.log(`[transcribe:local] sending request to local Whisper server at ${whisperUrl}...`);
+      try {
+        const sliceBuf = wavBuffer.buffer.slice(wavBuffer.byteOffset, wavBuffer.byteOffset + wavBuffer.byteLength);
+        const blob = new Blob([sliceBuf as any], { type: 'audio/wav' });
+        const formData = new FormData();
+        formData.append('file', blob, 'audio.wav');
+        formData.append('audio_file', blob, 'audio.wav');
+        formData.append('temperature', '0.0');
+        formData.append('language', 'en');
+
+        let targetUrl = whisperUrl;
+        if (!whisperUrl.includes('/inference') && !whisperUrl.includes('/asr') && !whisperUrl.includes('/transcribe')) {
+          targetUrl = `${whisperUrl.replace(/\/$/, '')}/inference`;
+        }
+
+        const response = await fetch(targetUrl, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        }
+
+        const contentType = response.headers.get('content-type') || '';
+        let raw = '';
+        if (contentType.includes('application/json')) {
+          const data: any = await response.json();
+          raw = (data?.text ?? '').trim();
+        } else {
+          raw = (await response.text()).trim();
+        }
+
+        console.log(`[transcribe:local] raw text: "${raw}"`);
         const text = cleanTranscript(raw);
         if (text) {
           const formatted = formatScripturesInText(text);
-          console.log(`[transcribe:offline] "${formatted}"`);
+          console.log(`[transcribe:local] clean formatted text: "${formatted}"`);
           return formatted;
         }
         return '';
+      } catch (e: any) {
+        console.error('[transcribe:local] request error:', e);
+        return `[Local Whisper Error: ${e.message ?? e}]`;
       }
+    }
+
+    // ── 1. Offline path (preferred) ──────────────────────────────────────────
+    const offlineReady = isSpeechEngineReady() && selectedModel !== 'groq-cloud' && selectedModel !== 'local-whisper' && selectedModel !== 'web-speech-api';
+    console.log(`[transcribe] Offline Whisper engine status: ${offlineReady ? 'Ready' : 'Not Ready'}`);
+    if (offlineReady) {
+      const samples = parsePcmFromWav(wavBuffer);
+      let min = 32767, max = -32768, sum = 0;
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        if (s < min) min = s;
+        if (s > max) max = s;
+        sum += Math.abs(s);
+      }
+      const avg = sum / (samples.length || 1);
+      console.log(`[transcribe:offline] parsed PCM samples: ${samples.length}, min: ${min}, max: ${max}, avg: ${avg.toFixed(1)}`);
+      console.log(`[transcribe:offline] first 10 samples:`, samples.slice(0, 10));
+      
+      if (samples.length > 0) {
+        const raw = await transcribeChunk(samples);
+        console.log(`[transcribe:offline] raw text: "${raw}"`);
+        const text = cleanTranscript(raw);
+        if (text) {
+          const formatted = formatScripturesInText(text);
+          console.log(`[transcribe:offline] clean formatted text: "${formatted}"`);
+          return formatted;
+        } else {
+          console.log(`[transcribe:offline] empty or hallucination, discarding chunk.`);
+          return '';
+        }
+      }
+      return '';
     }
 
     // ── 2. Groq cloud fallback (only when key is configured) ─────────────────
@@ -933,23 +1013,26 @@ ${scriptures.length > 0
       return '';
     }
 
+    console.log(`[transcribe:groq] sending request to Groq API (key length: ${groqApiKey.length})...`);
     try {
       // Send WAV directly — Groq accepts wav and it's what the renderer now sends
-      const blob = new Blob([wavBuffer.buffer as ArrayBuffer], { type: 'audio/wav' });
+      const blob = new Blob([wavBuffer.buffer.slice(wavBuffer.byteOffset, wavBuffer.byteOffset + wavBuffer.byteLength) as any], { type: 'audio/wav' });
       const formData = new FormData();
       formData.append('file', blob, 'audio.wav');
       formData.append('model', 'whisper-large-v3');
       formData.append('language', 'en');
 
+      console.log('[transcribe:groq] performing fetch request...');
       const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${groqApiKey}` },
         body: formData
       });
 
+      console.log('[transcribe:groq] response code:', response.status, response.statusText);
       if (!response.ok) {
         const errText = await response.text();
-        console.error('[transcribe:groq] error:', errText);
+        console.error('[transcribe:groq] error response:', errText);
         try {
           const parsed = JSON.parse(errText);
           if (parsed?.error?.message) return `[Groq Error: ${parsed.error.message}]`;
@@ -959,11 +1042,14 @@ ${scriptures.length > 0
 
       const data: any = await response.json();
       const raw = (data?.text ?? '').trim();
+      console.log(`[transcribe:groq] raw text: "${raw}"`);
       const text = cleanTranscript(raw);
       if (text) {
         const formatted = formatScripturesInText(text);
-        console.log(`[transcribe:groq] "${formatted}"`);
+        console.log(`[transcribe:groq] clean formatted text: "${formatted}"`);
         return formatted;
+      } else {
+        console.log(`[transcribe:groq] discarded as empty/hallucination`);
       }
       return '';
     } catch (e: any) {
@@ -1052,10 +1138,13 @@ ${scriptures.length > 0
         }
       }
 
+      const presetScripture = store.get('preset_scripture');
       const projectionData: any = {
         reference: `${fullRefStr} (${translation})`,
         text: textCombined,
-        translation
+        translation,
+        slideType: 'scripture',
+        preset: presetScripture
       };
       if (secondaryText) {
         projectionData.secondaryText = secondaryText;

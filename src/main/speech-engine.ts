@@ -100,10 +100,43 @@ export async function transcribeChunk(pcmData: number[]): Promise<string> {
   if (!pcmData || pcmData.length < 1600) return ''; // at least 0.1s @ 16kHz
 
   try {
-    // Normalize Int16-range values to Float32 [-1, 1] for Whisper
-    const float32 = new Float32Array(pcmData.length);
+    // 1. DC Offset Removal (Mean Subtraction)
+    let sum = 0;
     for (let i = 0; i < pcmData.length; i++) {
-      float32[i] = Math.max(-1, Math.min(1, pcmData[i] / 32768));
+      sum += pcmData[i];
+    }
+    const mean = sum / pcmData.length;
+
+    // 2. Convert to Float32 and calculate RMS
+    const float32 = new Float32Array(pcmData.length);
+    let sumSq = 0;
+    for (let i = 0; i < pcmData.length; i++) {
+      const val = (pcmData[i] - mean) / 32768;
+      float32[i] = val;
+      sumSq += val * val;
+    }
+    const rms = Math.sqrt(sumSq / pcmData.length);
+
+    // 3. RMS-based Volume Normalization with Peak Limiting (prevents clipping distortion)
+    const targetRms = 0.15;
+    const gateThreshold = 0.003;
+    let peak = 0.0001;
+    for (let i = 0; i < float32.length; i++) {
+      const absVal = Math.abs(float32[i]);
+      if (absVal > peak) peak = absVal;
+    }
+
+    if (rms > gateThreshold) {
+      const factorRms = targetRms / rms;
+      const factorPeak = 0.9 / peak;
+      const factor = Math.min(factorRms, factorPeak);
+      
+      for (let i = 0; i < float32.length; i++) {
+        float32[i] *= factor;
+      }
+      console.log(`[SpeechEngine] Normalized audio: RMS ${rms.toFixed(4)} (peak ${peak.toFixed(4)}) -> scaled by factor ${factor.toFixed(2)}`);
+    } else {
+      console.log(`[SpeechEngine] Audio level: RMS ${rms.toFixed(4)} (no normalization applied)`);
     }
 
     const isMultilingual = !currentModelName.endsWith('.en');
