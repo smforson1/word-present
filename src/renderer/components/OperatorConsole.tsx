@@ -84,6 +84,7 @@ export default function OperatorConsole() {
   // Config & Settings State
   const [apiKey, setApiKey] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
+  const [openAiApiKey, setOpenAiApiKey] = useState('');
   const [translation, setTranslation] = useState('KJV');
   const [secondaryTranslation, setSecondaryTranslation] = useState('');
   const [isDualProjectionEnabled, setIsDualProjectionEnabled] = useState(false);
@@ -134,7 +135,7 @@ export default function OperatorConsole() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [envKeyActive, setEnvKeyActive] = useState(false);
   const [groqEnvKeyActive, setGroqEnvKeyActive] = useState(false);
-
+  const [openAiEnvKeyActive, setOpenAiEnvKeyActive] = useState(false);
   // Audio & Mic Pipeline State
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false); // Ref for accurate closure access
@@ -151,7 +152,7 @@ export default function OperatorConsole() {
   const [modelProgressDetail, setModelProgressDetail] = useState('');
   const [speechModelsStatus, setSpeechModelsStatus] = useState<{ downloaded: string[]; activeModel: string }>({
     downloaded: [],
-    activeModel: 'web-speech-api'
+    activeModel: 'groq-cloud'
   });
   const [aiLogs, setAiLogs] = useState<AILogItem[]>([]);
   const [activeProjected, setActiveProjected] = useState<{ reference: string; text: string; translation: string; secondaryText?: string; secondaryTranslation?: string; slideType?: string; preset?: any } | null>(null);
@@ -276,10 +277,12 @@ export default function OperatorConsole() {
 
   useEffect(() => {
     if (!window.api) return;
+    let unsubProgress: (() => void) | null = null;
 
     window.api.getSettings().then((settings: any) => {
       setApiKey(settings.anthropicApiKey || '');
       setGroqApiKey(settings.groqApiKey || '');
+      setOpenAiApiKey(settings.openAiApiKey || '');
       setTranslation(settings.selectedTranslation || 'KJV');
       setSecondaryTranslation(settings.secondaryTranslation || '');
       setIsDualProjectionEnabled(settings.isDualProjectionEnabled || false);
@@ -304,9 +307,9 @@ export default function OperatorConsole() {
       if (settings.projectionParticleDensity !== undefined) setProjectionParticleDensity(settings.projectionParticleDensity);
       if (settings.projectionParticleColor) setProjectionParticleColor(settings.projectionParticleColor);
       if (settings.projectionBgVideo !== undefined) setProjectionBgVideo(settings.projectionBgVideo);
-      if (settings.selectedSpeechModel) {
-        setSpeechModelsStatus(prev => ({ ...prev, activeModel: settings.selectedSpeechModel }));
-      }
+      
+      const activeModel = settings.selectedSpeechModel || 'groq-cloud';
+      setSpeechModelsStatus(prev => ({ ...prev, activeModel }));
       
       // Load presets
       if (settings.preset_scripture) setPresetScripture(settings.preset_scripture);
@@ -322,6 +325,53 @@ export default function OperatorConsole() {
       const noiseGateVal = settings.noiseGateThreshold !== undefined ? settings.noiseGateThreshold : 0.003;
       setNoiseGateThresholdState(noiseGateVal);
       noiseGateThresholdRef.current = noiseGateVal;
+
+      // Initialize Whisper speech engine conditionally based on active model
+      if (activeModel !== 'web-speech-api') {
+        if (!speechEngineInitStarted) {
+          speechEngineInitStarted = true;
+          setSpeechEngineStatus('loading');
+          addAiLog('info', 'Loading offline speech model…');
+
+          unsubProgress = window.api.onSpeechInitProgress((_: any, data: { status: string; detail?: string }) => {
+            const { status, detail } = data;
+            if (status === 'downloading') {
+              setSpeechEngineStatus('downloading');
+              setModelProgressDetail(detail ?? 'Downloading model…');
+              addAiLog('info', detail ?? 'Downloading model…');
+            } else if (status === 'loading') {
+              setSpeechEngineStatus('loading');
+              setModelProgressDetail(detail ?? 'Loading model into memory…');
+              addAiLog('info', detail ?? 'Loading model into memory…');
+            } else if (status === 'ready') {
+              setSpeechEngineStatus('ready');
+              setModelProgressDetail('');
+              addAiLog('success', detail ?? 'Offline speech model ready — click Start Listening to begin.');
+              loadSpeechModelsStatus();
+            } else if (status === 'error') {
+              setSpeechEngineStatus('error');
+              setModelProgressDetail(detail ?? 'Speech model failed to load.');
+              addAiLog('error', detail ?? 'Speech model failed to load.');
+            }
+          });
+
+          window.api.initSpeechEngine().then((ready: boolean) => {
+            if (ready) {
+              setSpeechEngineStatus('ready');
+              loadSpeechModelsStatus();
+            } else {
+              setSpeechEngineStatus('error');
+              addAiLog('error', 'Speech engine initialization returned false.');
+            }
+          }).catch((err: any) => {
+            setSpeechEngineStatus('error');
+            addAiLog('error', `Could not start speech engine: ${err?.message ?? err}`);
+          });
+        }
+      } else {
+        setSpeechEngineStatus('ready');
+        addAiLog('success', 'Online Web Speech API is ready — click Start Listening to begin.');
+      }
     });
 
     window.api.getTranslations().then((trans) => {
@@ -332,53 +382,12 @@ export default function OperatorConsole() {
     // Check if API keys are configured via .env (without exposing them to the UI)
     window.api.hasEnvKey().then(setEnvKeyActive);
     window.api.hasGroqEnvKey().then(setGroqEnvKeyActive);
+    window.api.hasOpenAiEnvKey().then(setOpenAiEnvKeyActive);
     
     // Load local speech models list
     loadSpeechModelsStatus();
 
-    // Initialize Whisper speech engine via main process IPC
-    let unsubProgress: (() => void) | null = null;
-    if (!speechEngineInitStarted) {
-      speechEngineInitStarted = true;
-      setSpeechEngineStatus('loading');
-      addAiLog('info', 'Loading offline speech model…');
 
-      // Listen for progress updates from main process
-      unsubProgress = window.api.onSpeechInitProgress((_: any, data: { status: string; detail?: string }) => {
-        const { status, detail } = data;
-        if (status === 'downloading') {
-          setSpeechEngineStatus('downloading');
-          setModelProgressDetail(detail ?? 'Downloading model…');
-          addAiLog('info', detail ?? 'Downloading model…');
-        } else if (status === 'loading') {
-          setSpeechEngineStatus('loading');
-          setModelProgressDetail(detail ?? 'Loading model into memory…');
-          addAiLog('info', detail ?? 'Loading model into memory…');
-        } else if (status === 'ready') {
-          setSpeechEngineStatus('ready');
-          setModelProgressDetail('');
-          addAiLog('success', detail ?? 'Offline speech model ready — click Start Listening to begin.');
-          loadSpeechModelsStatus();
-        } else if (status === 'error') {
-          setSpeechEngineStatus('error');
-          setModelProgressDetail(detail ?? 'Speech model failed to load.');
-          addAiLog('error', detail ?? 'Speech model failed to load.');
-        }
-      });
-
-      window.api.initSpeechEngine().then((ready: boolean) => {
-        if (ready) {
-          setSpeechEngineStatus('ready');
-          loadSpeechModelsStatus();
-        } else {
-          setSpeechEngineStatus('error');
-          addAiLog('error', 'Speech engine initialization returned false.');
-        }
-      }).catch((err: any) => {
-        setSpeechEngineStatus('error');
-        addAiLog('error', `Could not start speech engine: ${err?.message ?? err}`);
-      });
-    }
 
     window.api.getNetworkInfo().then((info: any) => {
       setNetworkInfo(info);
@@ -477,7 +486,12 @@ export default function OperatorConsole() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
+      if (
+        document.activeElement?.tagName === 'INPUT' ||
+        document.activeElement?.tagName === 'TEXTAREA' ||
+        document.activeElement?.getAttribute('contenteditable') === 'true' ||
+        (document.activeElement as HTMLElement)?.isContentEditable
+      ) return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -619,14 +633,13 @@ export default function OperatorConsole() {
     } catch (err: any) {
       console.error('[AudioProcessor] Transcription pipeline failed:', err);
       setInterimTranscript('');
-      addAiLog('warning', `Audio transcription error: ${err?.message ?? 'unknown'}`);
+      addAiLog('error', `Audio transcription error: ${err?.message ?? 'unknown'}`);
     }
   };
 
-  const startMicrophone = async () => {
+  const setupAudioMeter = async () => {
     console.log('[Microphone] Requesting stream access. Target Device ID:', selectedAudioDevice || 'Default');
     try {
-      // ── 1. Get microphone stream ────────────────────────────────────
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           deviceId: selectedAudioDevice ? { exact: selectedAudioDevice } : undefined,
@@ -638,15 +651,13 @@ export default function OperatorConsole() {
       audioStreamRef.current = stream;
       console.log('[Microphone] Stream acquired. Active tracks:', stream.getAudioTracks().map(t => t.label));
 
-      // AudioContext at exactly 16 kHz so we capture PCM at Whisper's native rate
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
       audioContextRef.current = audioCtx;
       if (audioCtx.state === 'suspended') await audioCtx.resume();
       console.log('[Microphone] AudioContext sample rate:', audioCtx.sampleRate, 'state:', audioCtx.state);
 
       const source = audioCtx.createMediaStreamSource(stream);
 
-      // ── 2. Analyser for VU meter ─────────────────────────────────────
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
@@ -668,6 +679,27 @@ export default function OperatorConsole() {
       };
       updateMeter();
 
+      return { stream, audioCtx, source };
+    } catch (err: any) {
+      console.error('[Microphone] Failed to initialize stream/meter:', err);
+      const msg = err?.message ?? String(err);
+      addAiLog('error',
+        msg.includes('Permission') || msg.includes('NotAllowed') || msg.includes('not allowed')
+          ? 'Microphone permission denied. Go to Windows Settings → Privacy → Microphone and allow access.'
+          : `Speech capture error: ${msg}`
+      );
+      setIsRecording(false);
+      stopMicrophone();
+      return null;
+    }
+  };
+
+  const startMicrophone = async () => {
+    const meterSetup = await setupAudioMeter();
+    if (!meterSetup) return;
+    const { audioCtx, source } = meterSetup;
+
+    try {
       // ── 3. AudioWorklet — captures raw PCM in a dedicated audio thread ─────
       // AudioWorklet runs in AudioWorkletGlobalScope (separate thread from the
       // renderer), so PCM accumulation never stalls the UI or causes blank screens.
@@ -693,13 +725,9 @@ export default function OperatorConsole() {
 
       addAiLog('success', 'Listening — capturing raw PCM at 16 kHz…');
     } catch (err: any) {
-      console.error('[Microphone] Failed to initialize:', err);
+      console.error('[Microphone] Failed to initialize worklet:', err);
       const msg = err?.message ?? String(err);
-      addAiLog('error',
-        msg.includes('Permission') || msg.includes('NotAllowed') || msg.includes('not allowed')
-          ? 'Microphone permission denied. Go to Windows Settings → Privacy → Microphone and allow access.'
-          : `Speech capture error: ${msg}`
-      );
+      addAiLog('error', `Speech capture error: ${msg}`);
       setIsRecording(false);
       stopMicrophone();
     }
@@ -746,13 +774,15 @@ export default function OperatorConsole() {
     }
   };
 
-  const startWebSpeech = () => {
+  const startWebSpeech = async () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      addAiLog('error', 'Web Speech API is not supported in this environment.');
-      setIsRecording(false);
+      addAiLog('warning', 'Web Speech API is not supported in this environment. Falling back to local Whisper server.');
+      startMicrophone();
       return;
     }
+    
+    await setupAudioMeter();
     
     if (recognitionRef.current) {
       try {
@@ -1448,7 +1478,7 @@ export default function OperatorConsole() {
                       <div className="flex-grow flex flex-col items-center justify-center px-4 gap-1 overflow-y-auto">
                         {/* Primary Text */}
                         <p
-                          className="text-center font-medium"
+                          className="text-center font-medium whitespace-pre-wrap"
                           style={{
                             fontSize: `calc(11px * ${previewFontSizeScale})`,
                             fontFamily:
@@ -1468,7 +1498,7 @@ export default function OperatorConsole() {
                                 ? 'normal' : 'italic'
                           }}
                         >
-                          &ldquo;{activeProjected.text}&rdquo;
+                          {activeProjected.slideType === 'song' ? activeProjected.text : `“${activeProjected.text}”`}
                         </p>
 
                         {/* Secondary Text */}
@@ -1476,7 +1506,7 @@ export default function OperatorConsole() {
                           <>
                             <div className="w-8 border-t border-white/20 my-0.5" />
                             <p
-                              className="text-center text-zinc-300 opacity-85"
+                              className="text-center text-zinc-300 opacity-85 whitespace-pre-wrap"
                               style={{
                                 fontSize: `calc(9px * ${previewFontSizeScale})`,
                                 fontFamily:
@@ -1591,7 +1621,7 @@ export default function OperatorConsole() {
               </div>
             )}
             {middleTab === 'sermon' && (
-              <div className="p-4 h-full flex flex-col space-y-4 overflow-y-auto">
+              <div className="p-4 h-full flex flex-col space-y-4 overflow-hidden">
                 <div className="flex justify-between items-center shrink-0">
                   <h2 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Sermon Summary & Scripture Sheets</h2>
                   <div className="flex gap-2">
@@ -1623,9 +1653,9 @@ export default function OperatorConsole() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4 flex-grow overflow-hidden min-h-[350px]">
+                <div className="grid grid-cols-2 gap-4 flex-grow overflow-hidden">
                   {/* Left Column: Sermon Transcript */}
-                  <div className="flex flex-col space-y-2 border border-border rounded-lg bg-card p-3">
+                  <div className="flex flex-col space-y-2 border border-border rounded-lg bg-card p-3 overflow-hidden">
                     <div className="flex justify-between items-center">
                       <label className="text-xs font-bold text-foreground">Sermon Transcript Log</label>
                       <span className="text-[10px] text-muted-foreground">{sermonTranscript.trim().split(/\s+/).filter(Boolean).length} words</span>
@@ -1639,7 +1669,7 @@ export default function OperatorConsole() {
                   </div>
 
                   {/* Right Column: Generated Sermon Report */}
-                  <div className="flex flex-col space-y-2 border border-border rounded-lg bg-card p-3">
+                  <div className="flex flex-col space-y-2 border border-border rounded-lg bg-card p-3 overflow-hidden">
                     <div className="flex justify-between items-center">
                       <label className="text-xs font-bold text-foreground">Sermon Report & Scripture Sheet</label>
                       {sermonSummary && (
@@ -2027,6 +2057,33 @@ export default function OperatorConsole() {
                   </div>
 
                   <div className="space-y-1">
+                    <label className="text-xs font-semibold text-foreground flex justify-between items-center">
+                      <span>OpenAI API Key (Fallback)</span>
+                      <a href="https://platform.openai.com" target="_blank" rel="noreferrer" className="text-[10px] text-primary hover:underline font-normal">Get API Key</a>
+                    </label>
+                    {openAiEnvKeyActive ? (
+                      <div className="flex items-center gap-2 px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/30 rounded text-xs text-emerald-600 dark:text-emerald-400">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                        <span>API key loaded from <code className="font-mono">.env</code> — not visible for security</span>
+                      </div>
+                    ) : (
+                      <input
+                        type="password"
+                        value={openAiApiKey}
+                        onChange={e => setOpenAiApiKey(e.target.value)}
+                        onBlur={e => { if (window.api) window.api.setSettings('openAiApiKey', e.target.value); }}
+                        placeholder="sk-proj-… (or add to .env file)"
+                        className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
+                      />
+                    )}
+                    <p className="text-[10px] text-muted-foreground">
+                      {openAiEnvKeyActive
+                        ? 'To change the key, edit the .env file in the project root.'
+                        : 'Required if you select OpenAI as the speech model. Or add OPENAI_API_KEY to .env for better security.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
                     <label className="text-xs font-semibold text-foreground">Detection Mode</label>
                     <select
                       value={aiMode}
@@ -2053,6 +2110,7 @@ export default function OperatorConsole() {
                         { id: 'web-speech-api', label: 'Web Speech API (Built-in Browser Speech — Free)' },
                         { id: 'local-whisper', label: 'Local Whisper Server (Free & Unlimited)' },
                         { id: 'groq-cloud', label: 'Groq Cloud (High Accuracy & Speed)' },
+                        { id: 'openai-cloud', label: 'OpenAI Whisper API (Reliable Fallback, Paid)' },
                         { id: 'Xenova/whisper-tiny.en', label: 'Tiny (English-only) ~75MB (Local, Free & Offline)' },
                         { id: 'Xenova/whisper-tiny', label: 'Tiny (Multilingual) ~75MB (Local, Free & Offline)' },
                         { id: 'Xenova/whisper-base.en', label: 'Base (English-only) ~145MB (Local, Free & Offline)' },

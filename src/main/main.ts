@@ -40,7 +40,7 @@ const store = new Store({
     isDualProjectionEnabled: false,
 
     // Speech Model Manager
-    selectedSpeechModel: 'web-speech-api',
+    selectedSpeechModel: 'groq-cloud',
 
     // Rich Theme & Motion settings
     projectionParticleSpeed: 0.5,
@@ -109,6 +109,12 @@ const store = new Store({
 
 // Migrate existing default presets to 'global' background mode
 try {
+  const currentModel = store.get('selectedSpeechModel') as string;
+  console.log('[Startup] selectedSpeechModel on disk:', currentModel);
+  if (!currentModel || currentModel.startsWith('Xenova/') || currentModel === 'web-speech-api') {
+    console.log('[Startup] Resetting speech model to groq-cloud');
+    store.set('selectedSpeechModel', 'groq-cloud');
+  }
   const currentScripture = store.get('preset_scripture') as any;
   if (currentScripture && currentScripture.projectionBgMode === 'color' && currentScripture.projectionBgColor === '#000000' && !currentScripture.projectionBgImage) {
     currentScripture.projectionBgMode = 'global';
@@ -849,9 +855,9 @@ ${scriptures.length > 0
   // Initialise the local Whisper pipeline and relay progress events to the renderer
   ipcMain.handle('speech:init', async (event) => {
     const selectedModel = store.get('selectedSpeechModel') as string || 'web-speech-api';
-    if (selectedModel === 'groq-cloud' || selectedModel === 'local-whisper' || selectedModel === 'web-speech-api') {
+    if (selectedModel === 'groq-cloud' || selectedModel === 'openai-cloud' || selectedModel === 'local-whisper' || selectedModel === 'web-speech-api') {
       console.log(`[speech:init] ${selectedModel} engine selected. Bypassing offline Whisper.`);
-      const label = selectedModel === 'groq-cloud' ? 'Groq Cloud' : selectedModel === 'local-whisper' ? 'Local Whisper Server' : 'Browser Web Speech';
+      const label = selectedModel === 'groq-cloud' ? 'Groq Cloud' : selectedModel === 'openai-cloud' ? 'OpenAI API' : selectedModel === 'local-whisper' ? 'Local Whisper Server' : 'Browser Web Speech';
       event.sender.send('speech:init-progress', { status: 'ready', detail: `${label} Active` });
       return true;
     }
@@ -923,9 +929,11 @@ ${scriptures.length > 0
     };
 
     const selectedModel = store.get('selectedSpeechModel') as string || 'web-speech-api';
+    // If we receive audio chunks while in web-speech-api mode, it implies the frontend fell back because Web Speech API is unsupported
+    const effectiveModel = selectedModel === 'web-speech-api' ? 'local-whisper' : selectedModel;
 
     // ── Local Whisper Server Path ──────────────────────────────────────────
-    if (selectedModel === 'local-whisper') {
+    if (effectiveModel === 'local-whisper') {
       const whisperUrl = (store.get('whisperUrl') || 'http://localhost:8080') as string;
       console.log(`[transcribe:local] sending request to local Whisper server at ${whisperUrl}...`);
       try {
@@ -970,12 +978,12 @@ ${scriptures.length > 0
         return '';
       } catch (e: any) {
         console.error('[transcribe:local] request error:', e);
-        return `[Local Whisper Error: ${e.message ?? e}]`;
+        throw new Error(`A local Whisper server must be running at ${whisperUrl}. Details: ${e.message ?? e}`);
       }
     }
 
     // ── 1. Offline path (preferred) ──────────────────────────────────────────
-    const offlineReady = isSpeechEngineReady() && selectedModel !== 'groq-cloud' && selectedModel !== 'local-whisper' && selectedModel !== 'web-speech-api';
+    const offlineReady = isSpeechEngineReady() && effectiveModel !== 'groq-cloud' && effectiveModel !== 'openai-cloud' && effectiveModel !== 'local-whisper';
     console.log(`[transcribe] Offline Whisper engine status: ${offlineReady ? 'Ready' : 'Not Ready'}`);
     if (offlineReady) {
       const samples = parsePcmFromWav(wavBuffer);
@@ -1008,54 +1016,104 @@ ${scriptures.length > 0
 
     // ── 2. Groq cloud fallback (only when key is configured) ─────────────────
     const groqApiKey = (process.env.GROQ_API_KEY || store.get('groqApiKey') || '') as string;
-    if (!groqApiKey.trim()) {
-      console.warn('[transcribe] Offline engine not ready and no Groq API key configured.');
-      return '';
-    }
-
-    console.log(`[transcribe:groq] sending request to Groq API (key length: ${groqApiKey.length})...`);
-    try {
-      // Send WAV directly — Groq accepts wav and it's what the renderer now sends
-      const blob = new Blob([wavBuffer.buffer.slice(wavBuffer.byteOffset, wavBuffer.byteOffset + wavBuffer.byteLength) as any], { type: 'audio/wav' });
-      const formData = new FormData();
-      formData.append('file', blob, 'audio.wav');
-      formData.append('model', 'whisper-large-v3');
-      formData.append('language', 'en');
-
-      console.log('[transcribe:groq] performing fetch request...');
-      const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${groqApiKey}` },
-        body: formData
-      });
-
-      console.log('[transcribe:groq] response code:', response.status, response.statusText);
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('[transcribe:groq] error response:', errText);
-        try {
-          const parsed = JSON.parse(errText);
-          if (parsed?.error?.message) return `[Groq Error: ${parsed.error.message}]`;
-        } catch { /* ignore */ }
-        return `[Groq API Error: ${response.statusText}]`;
+    if (effectiveModel === 'groq-cloud') {
+      if (!groqApiKey.trim()) {
+        console.warn('[transcribe] Groq engine selected but no Groq API key configured.');
+        return '[Error: Please configure your Groq API Key in Settings to use the Groq Cloud speech engine]';
       }
 
-      const data: any = await response.json();
-      const raw = (data?.text ?? '').trim();
-      console.log(`[transcribe:groq] raw text: "${raw}"`);
-      const text = cleanTranscript(raw);
-      if (text) {
-        const formatted = formatScripturesInText(text);
-        console.log(`[transcribe:groq] clean formatted text: "${formatted}"`);
-        return formatted;
-      } else {
-        console.log(`[transcribe:groq] discarded as empty/hallucination`);
+      console.log(`[transcribe:groq] sending request to Groq API (key length: ${groqApiKey.length})...`);
+      try {
+        // Send WAV directly — Groq accepts wav and it's what the renderer now sends
+        const blob = new Blob([wavBuffer.buffer.slice(wavBuffer.byteOffset, wavBuffer.byteOffset + wavBuffer.byteLength) as any], { type: 'audio/wav' });
+        const formData = new FormData();
+        formData.append('file', blob, 'audio.wav');
+        formData.append('model', 'whisper-large-v3');
+        formData.append('language', 'en');
+
+        console.log('[transcribe:groq] performing fetch request...');
+        const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${groqApiKey}` },
+          body: formData
+        });
+
+        console.log('[transcribe:groq] response code:', response.status, response.statusText);
+        if (!response.ok) {
+          if (response.status === 429) {
+            return '[Error: Groq Free Tier Rate Limit Reached (20 requests/min). Please go to Settings and increase your Audio Chunk Interval to 4 or 5 seconds.]';
+          }
+          const errText = await response.text();
+          console.error('[transcribe:groq] error response:', errText);
+          try {
+            const parsed = JSON.parse(errText);
+            if (parsed?.error?.message) return `[Groq Error: ${parsed.error.message}]`;
+          } catch { /* ignore */ }
+          return `[Groq API Error: ${response.statusText}]`;
+        }
+
+        const data: any = await response.json();
+        const raw = (data?.text ?? '').trim();
+        console.log(`[transcribe:groq] raw text: "${raw}"`);
+        const text = cleanTranscript(raw);
+        if (text) {
+          const formatted = formatScripturesInText(text);
+          console.log(`[transcribe:groq] clean formatted text: "${formatted}"`);
+          return formatted;
+        } else {
+          console.log(`[transcribe:groq] discarded as empty/hallucination`);
+        }
+        return '';
+      } catch (e: any) {
+        console.error('[transcribe:groq] request error:', e);
+        return `[Transcription Error: ${e.message ?? e}]`;
       }
-      return '';
-    } catch (e: any) {
-      console.error('[transcribe:groq] request error:', e);
-      return `[Transcription Error: ${e.message ?? e}]`;
     }
+    
+    // ── 3. OpenAI cloud fallback (when selected) ──────
+    if (effectiveModel === 'openai-cloud') {
+      const openAiApiKey = (process.env.OPENAI_API_KEY || store.get('openAiApiKey') || '') as string;
+      if (!openAiApiKey.trim()) {
+        console.warn('[transcribe] OpenAI engine selected but no OpenAI API key configured.');
+        return '[Error: Please configure your OpenAI API Key in Settings to use the OpenAI Whisper engine]';
+      }
+
+      console.log(`[transcribe:openai] sending request to OpenAI API...`);
+      try {
+        const blob = new Blob([wavBuffer.buffer.slice(wavBuffer.byteOffset, wavBuffer.byteOffset + wavBuffer.byteLength) as any], { type: 'audio/wav' });
+        const formData = new FormData();
+        formData.append('file', blob, 'audio.wav');
+        formData.append('model', 'whisper-1');
+        formData.append('language', 'en');
+
+        const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${openAiApiKey}` },
+          body: formData
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error('[transcribe:openai] error response:', errText);
+          try {
+            const parsed = JSON.parse(errText);
+            if (parsed?.error?.message) return `[OpenAI Error: ${parsed.error.message}]`;
+          } catch { /* ignore */ }
+          return `[OpenAI API Error: ${response.statusText}]`;
+        }
+
+        const data = await response.json();
+        const text = data.text?.trim() || '';
+        if (text) {
+          return formatScripturesInText(cleanTranscript(text));
+        }
+      } catch (e: any) {
+        console.error('[transcribe:openai] request error:', e);
+        return `[OpenAI Network Error: ${e.message ?? String(e)}]`;
+      }
+    }
+
+    return '';
   });
 
 
@@ -1174,11 +1232,15 @@ ${scriptures.length > 0
 
   // Let the renderer know if an API key is available via env (without exposing the key itself)
   ipcMain.handle('settings:has-env-key', () => {
-    return !!(process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY.trim());
+    return !!process.env.ANTHROPIC_API_KEY;
+  });
+  
+  ipcMain.handle('settings:has-groq-env-key', () => {
+    return !!process.env.GROQ_API_KEY;
   });
 
-  ipcMain.handle('settings:has-groq-env-key', () => {
-    return !!(process.env.GROQ_API_KEY && process.env.GROQ_API_KEY.trim());
+  ipcMain.handle('settings:has-openai-env-key', () => {
+    return !!process.env.OPENAI_API_KEY;
   });
 
   // Check what speech recognition capabilities are available in this Electron build

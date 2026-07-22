@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('api', {
   getNetworkInfo: () => ipcRenderer.invoke('settings:get-network'),
   hasEnvKey: () => ipcRenderer.invoke('settings:has-env-key'),
   hasGroqEnvKey: () => ipcRenderer.invoke('settings:has-groq-env-key'),
+  hasOpenAiEnvKey: () => ipcRenderer.invoke('settings:has-openai-env-key'),
 
   // Offline Speech Engine
   initSpeechEngine: () => ipcRenderer.invoke('speech:init'),

@@ -68,6 +68,7 @@ const makeApiMock = (overrides: Partial<typeof window.api> = {}) => ({
   onDetectedRef: vi.fn().mockReturnValue(() => {}),
   hasEnvKey: vi.fn().mockResolvedValue(false),
   hasGroqEnvKey: vi.fn().mockResolvedValue(false),
+  hasOpenAiEnvKey: vi.fn().mockResolvedValue(false),
   initSpeechEngine: vi.fn().mockResolvedValue(true),
   transcribeChunk: vi.fn().mockResolvedValue(''),
   getSpeechModelsStatus: vi.fn().mockResolvedValue({ downloaded: [], activeModel: 'Xenova/whisper-base.en' }),

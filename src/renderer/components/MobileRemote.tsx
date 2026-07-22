@@ -7,11 +7,11 @@ export default function MobileRemote() {
   const [pin, setPin] = useState('');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authError, setAuthError] = useState('');
-  const [activeScripture, setActiveScripture] = useState<{ reference: string; text: string; translation: string } | null>(null);
+   const [activeScripture, setActiveScripture] = useState<{ reference: string; text: string; translation: string; slideType?: string } | null>(null);
   const [blackout, setBlackout] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchError, setSearchError] = useState('');
-  const [history, setHistory] = useState<{ reference: string; text: string; translation: string }[]>([]);
+  const [history, setHistory] = useState<{ reference: string; text: string; translation: string; slideType?: string }[]>([]);
 
   useEffect(() => {
     const socketUrl = window.location.port && window.location.port !== '3000'
@@ -124,7 +124,9 @@ export default function MobileRemote() {
             <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Currently Projecting</div>
             {activeScripture ? (
               <div>
-                <p className="font-serif italic text-lg leading-relaxed text-foreground">“{activeScripture.text}”</p>
+                <p className="font-serif italic text-lg leading-relaxed text-foreground whitespace-pre-wrap">
+                  {activeScripture.slideType === 'song' ? activeScripture.text : `“${activeScripture.text}”`}
+                </p>
                 <h3 className="font-bold text-gold mt-2 text-base">{activeScripture.reference}</h3>
               </div>
             ) : <p className="text-muted-foreground text-sm italic">No active scripture on projector.</p>}

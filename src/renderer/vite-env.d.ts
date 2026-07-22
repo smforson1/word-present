@@ -63,9 +63,10 @@ interface TranslationRecord {
 }
 
 interface AppSettings {
-  anthropicApiKey: string;
-  groqApiKey: string;
-  selectedTranslation: string;
+  anthropicApiKey?: string;
+  groqApiKey?: string;
+  openAiApiKey?: string;
+  selectedTranslation?: string;
   fontSizeScale: number;
   theme: string;
   whisperUrl: string;
@@ -137,6 +138,7 @@ interface Window {
     getNetworkInfo: () => Promise<NetworkInfo | null>;
     hasEnvKey: () => Promise<boolean>;
     hasGroqEnvKey: () => Promise<boolean>;
+    hasOpenAiEnvKey: () => Promise<boolean>;
     initSpeechEngine: () => Promise<boolean>;
     transcribeChunk: (wavBuffer: Uint8Array) => Promise<string>;
     getSpeechModelsStatus: () => Promise<{ downloaded: string[], activeModel: string }>;
