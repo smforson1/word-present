@@ -6,7 +6,7 @@ This task list implements the five completion gaps identified in the bugfix spec
 
 ## Tasks
 
-- [-] 1. Write bug condition exploration tests (BEFORE implementing any fix)
+- [ ] 1. Write bug condition exploration tests (BEFORE implementing any fix)
   - **Property 1: Bug Condition** - Five Implementation Gaps (QR Discard, Whisper Stub, No Packaging, Loose Types, Empty Bookmark Label)
   - **CRITICAL**: These tests MUST FAIL on unfixed code — failure confirms each bug exists
   - **DO NOT attempt to fix the tests or the code when they fail**
@@ -22,7 +22,7 @@ This task list implements the five completion gaps identified in the bugfix spec
   - Mark task complete when all five exploration tests are written, run, and failures are documented
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
 
-- [~] 2. Write preservation property tests (BEFORE implementing any fix)
+- [ ] 2. Write preservation property tests (BEFORE implementing any fix)
   - **Property 2: Preservation** - Unchanged Behavior Across All Five Gaps
   - **IMPORTANT**: Follow observation-first methodology — observe behavior on UNFIXED code for non-buggy inputs first
   - **Observe on unfixed code (non-buggy paths):**
@@ -42,7 +42,7 @@ This task list implements the five completion gaps identified in the bugfix spec
 
 - [ ] 3. Fix Gap 1 — QR Code not rendered in OperatorConsole.tsx
 
-  - [~] 3.1 Add `qrDataUrl` state and capture the resolved data URL
+  - [ ] 3.1 Add `qrDataUrl` state and capture the resolved data URL
     - In `OperatorConsole.tsx`, add state variable: `const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);`
     - In the `getNetworkInfo` `.then()` block, replace `.then(() => {})` with `.then((dataUrl: string) => setQrDataUrl(dataUrl))`
     - _Bug_Condition: isBugCondition_QR — networkInfo is non-null AND QRCode.toDataURL has been called AND state.qrDataUrl = null (result was discarded)_
@@ -50,7 +50,7 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Preservation: Header badge rendering of IP/port/PIN must remain byte-for-byte unchanged (Requirement 3.4)_
     - _Requirements: 2.1, 3.4_
 
-  - [~] 3.2 Render the QR code `<img>` in the settings/network-info section
+  - [ ] 3.2 Render the QR code `<img>` in the settings/network-info section
     - In the settings tab (right pane), within the network info area, add a conditional block:
       ```tsx
       {qrDataUrl && (
@@ -63,14 +63,14 @@ This task list implements the five completion gaps identified in the bugfix spec
     - Do NOT modify the existing header badge block that renders `networkInfo.ip`, `networkInfo.port`, `networkInfo.pin`
     - _Requirements: 2.1, 3.4_
 
-  - [~] 3.3 Verify bug condition exploration test now passes for Gap 1
+  - [ ] 3.3 Verify bug condition exploration test now passes for Gap 1
     - **Property 1: Expected Behavior** - QR Code Stored and Rendered
     - **IMPORTANT**: Re-run the SAME Gap 1 test from task 1 — do NOT write a new test
     - The test asserts `state.qrDataUrl != null` and `<img src={qrDataUrl}>` is present in the DOM
     - **EXPECTED OUTCOME**: Test PASSES (confirms Gap 1 is fixed)
     - _Requirements: 2.1_
 
-  - [~] 3.4 Verify Gap 1 preservation tests still pass
+  - [ ] 3.4 Verify Gap 1 preservation tests still pass
     - **Property 2: Preservation** - Header Badge Unmodified
     - Re-run the Gap 1 preservation tests from task 2 (null networkInfo path, header badge unchanged)
     - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
@@ -78,12 +78,12 @@ This task list implements the five completion gaps identified in the bugfix spec
 
 - [ ] 4. Fix Gap 2 — Whisper URL fallback not implemented in OperatorConsole.tsx
 
-  - [~] 4.1 Add Whisper session state and MediaRecorder ref
+  - [ ] 4.1 Add Whisper session state and MediaRecorder ref
     - Add state: `const [whisperSessionActive, setWhisperSessionActive] = useState(false);`
     - Add ref: `const mediaRecorderRef = useRef<MediaRecorder | null>(null);`
     - _Requirements: 2.2_
 
-  - [~] 4.2 Replace the stub with a Whisper HTTP streaming fallback
+  - [ ] 4.2 Replace the stub with a Whisper HTTP streaming fallback
     - In `startSpeechRecognition()`, replace the stub block (`addAiLog('warning', ...) / return`) with a MediaRecorder-based implementation that:
       1. Reads `whisperUrl` from component state (already populated from `getSettings`)
       2. Creates a `MediaRecorder` from `audioStreamRef.current` (already captured by `startMicrophone`)
@@ -96,19 +96,19 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Preservation: When SpeechRecognition IS defined, the Web Speech API path runs identically (Requirement 3.1)_
     - _Requirements: 2.2, 3.1_
 
-  - [~] 4.3 Extend `stopSpeechRecognition()` to also stop the MediaRecorder
+  - [ ] 4.3 Extend `stopSpeechRecognition()` to also stop the MediaRecorder
     - In `stopSpeechRecognition()`, add cleanup: stop and null `mediaRecorderRef.current` if it is set
     - Set `whisperSessionActive` to false
     - _Requirements: 2.2_
 
-  - [~] 4.4 Verify bug condition exploration test now passes for Gap 2
+  - [ ] 4.4 Verify bug condition exploration test now passes for Gap 2
     - **Property 1: Expected Behavior** - Whisper Fallback Activated
     - Re-run the SAME Gap 2 tests from task 1 (mock Web Speech API absent, mock fetch)
     - Assert `fetch` is called to `${whisperUrl}/inference`; assert error AI-log emitted when fetch fails
     - **EXPECTED OUTCOME**: Tests PASS (confirms Gap 2 is fixed)
     - _Requirements: 2.2_
 
-  - [~] 4.5 Verify Gap 2 preservation tests still pass
+  - [ ] 4.5 Verify Gap 2 preservation tests still pass
     - **Property 2: Preservation** - Web Speech API Path Unchanged
     - Re-run the Gap 2 preservation tests from task 2 (SpeechRecognition defined path)
     - Assert `continuous: true`, `interimResults: true`, `lang: 'en-US'`, same event handlers — unchanged
@@ -117,13 +117,13 @@ This task list implements the five completion gaps identified in the bugfix spec
 
 - [ ] 5. Fix Gap 3 — No electron-builder packaging config
 
-  - [~] 5.1 Add `electron-builder` devDependency to `package.json`
+  - [ ] 5.1 Add `electron-builder` devDependency to `package.json`
     - Add `"electron-builder": "^24.9.1"` to `devDependencies` in `package.json`
     - Run `npm install` to install the dependency
     - _Bug_Condition: isBugCondition_Packaging — "electron-builder" NOT IN package.json.devDependencies_
     - _Requirements: 2.3_
 
-  - [~] 5.2 Add `package` and `dist:win` scripts to `package.json`
+  - [ ] 5.2 Add `package` and `dist:win` scripts to `package.json`
     - Add to `scripts` in `package.json`:
       ```json
       "package": "npm run build && electron-builder",
@@ -134,7 +134,7 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Preservation: npm run dev and npm run build must remain unchanged (Requirement 3.3)_
     - _Requirements: 2.3, 3.3_
 
-  - [~] 5.3 Create `electron-builder.json` in the project root
+  - [ ] 5.3 Create `electron-builder.json` in the project root
     - Create `electron-builder.json` with the following content:
       ```json
       {
@@ -166,13 +166,13 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Expected_Behavior: electron-builder.json EXISTS AND is valid JSON with required fields (appId, productName, output directory, asar: true, win NSIS target)_
     - _Requirements: 2.3_
 
-  - [~] 5.4 Verify bug condition exploration test now passes for Gap 3
+  - [ ] 5.4 Verify bug condition exploration test now passes for Gap 3
     - **Property 1: Expected Behavior** - Packaging Command Produces Installer
     - Re-run the SAME Gap 3 tests from task 1: assert `"electron-builder"` in devDependencies, `"package"` in scripts, `electron-builder.json` exists
     - **EXPECTED OUTCOME**: All three assertions PASS
     - _Requirements: 2.3_
 
-  - [~] 5.5 Verify Gap 3 preservation tests still pass
+  - [ ] 5.5 Verify Gap 3 preservation tests still pass
     - **Property 2: Preservation** - Dev Mode Unaffected
     - Re-run the Gap 3 preservation tests from task 2 (`dev` and `build` scripts unchanged, no electron-builder invocation in dev path)
     - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions to dev workflow)
@@ -180,7 +180,7 @@ This task list implements the five completion gaps identified in the bugfix spec
 
 - [ ] 6. Fix Gap 4 — Incomplete `window.api` TypeScript declarations in `vite-env.d.ts`
 
-  - [~] 6.1 Add concrete shared interfaces above the `Window` declaration
+  - [ ] 6.1 Add concrete shared interfaces above the `Window` declaration
     - In `src/renderer/vite-env.d.ts`, add the following interfaces before the `interface Window` block:
       ```typescript
       interface VerseQuery {
@@ -241,7 +241,7 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Bug_Condition: isBugCondition_Types — method parameter or return typed as `any` WHERE concrete type IS determinable_
     - _Requirements: 2.4_
 
-  - [~] 6.2 Replace `any`-typed method signatures with concrete types
+  - [ ] 6.2 Replace `any`-typed method signatures with concrete types
     - Update `Window.api` method signatures in `vite-env.d.ts` to use the new interfaces:
       - `queryVerses: (query: VerseQuery) => Promise<VerseResult[]>`
       - `parseReference: (refStr: string) => Promise<ParsedReference | null>`
@@ -266,19 +266,19 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Preservation: All eight renderer components must compile without errors after this change (Requirement 3.5)_
     - _Requirements: 2.4, 3.5_
 
-  - [~] 6.3 Run `tsc --noEmit` and resolve any resulting type errors in renderer components
+  - [ ] 6.3 Run `tsc --noEmit` and resolve any resulting type errors in renderer components
     - Run `npx tsc --noEmit` from the project root
     - If any renderer component produces errors due to the tightened types, update the component call sites to match the new concrete types (remove unnecessary `as any` casts, add proper type annotations)
     - Do NOT change runtime behavior — types are erased at runtime; this is a compile-time-only fix
     - _Requirements: 2.4, 3.5_
 
-  - [~] 6.4 Verify bug condition exploration test now passes for Gap 4
+  - [ ] 6.4 Verify bug condition exploration test now passes for Gap 4
     - **Property 1: Expected Behavior** - Complete window.api Type Coverage
     - Re-run the SAME Gap 4 tests from task 1 (typed assignment of `queryVerses` result to `VerseResult[]` without cast, `addBookmark` parameter not `any`)
     - **EXPECTED OUTCOME**: Tests PASS and `tsc --noEmit` exits with zero errors
     - _Requirements: 2.4_
 
-  - [~] 6.5 Verify Gap 4 preservation tests still pass
+  - [ ] 6.5 Verify Gap 4 preservation tests still pass
     - **Property 2: Preservation** - Zero TypeScript Compile Errors Across All Components
     - Re-run the Gap 4 preservation tests from task 2 (all eight renderer components compile clean)
     - **EXPECTED OUTCOME**: `tsc --noEmit` reports zero errors across all renderer files
@@ -286,7 +286,7 @@ This task list implements the five completion gaps identified in the bugfix spec
 
 - [ ] 7. Fix Gap 5 — Bookmark labels always empty in OperatorConsole.tsx
 
-  - [~] 7.1 Add pending bookmark state for the two-step label collection flow
+  - [ ] 7.1 Add pending bookmark state for the two-step label collection flow
     - In `OperatorConsole.tsx`, add state:
       ```typescript
       const [pendingBookmark, setPendingBookmark] = useState<{
@@ -297,7 +297,7 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Bug_Condition: isBugCondition_Label — addBookmark invocation where label = '' AND no user input was collected_
     - _Requirements: 2.5_
 
-  - [~] 7.2 Convert `addBookmark` to a two-step flow and add `confirmBookmark`
+  - [ ] 7.2 Convert `addBookmark` to a two-step flow and add `confirmBookmark`
     - Rename the existing `addBookmark` helper to `confirmBookmark` — it will contain the actual IPC call
     - Replace `addBookmark` with a new function that:
       1. Sets `pendingBookmark` to the incoming `{ book, chapter, verseStart, verseEnd, text }` values
@@ -324,7 +324,7 @@ This task list implements the five completion gaps identified in the bugfix spec
     - _Preservation: window.api.addBookmark, setBookmarksRefresh, setRightTab('bookmarks'), AI-log success — all must still fire on confirm (Requirement 3.2)_
     - _Requirements: 2.5, 3.2_
 
-  - [~] 7.3 Add the bookmark label modal overlay to the OperatorConsole render output
+  - [ ] 7.3 Add the bookmark label modal overlay to the OperatorConsole render output
     - At the root of the `OperatorConsole` return statement (above all other content), add the modal:
       ```tsx
       {pendingBookmark && (
@@ -356,19 +356,19 @@ This task list implements the five completion gaps identified in the bugfix spec
     - Do NOT modify `BibleBrowser.tsx` or `SearchPanel.tsx` — they call `onAddBookmark` as before; label collection is entirely encapsulated in `OperatorConsole`
     - _Requirements: 2.5_
 
-  - [~] 7.4 Verify bug condition exploration test now passes for Gap 5
+  - [ ] 7.4 Verify bug condition exploration test now passes for Gap 5
     - **Property 1: Expected Behavior** - Bookmark Label Collected from User
     - Re-run the SAME Gap 5 tests from task 1 (modal visible before IPC call, `window.api.addBookmark` not called until confirm, label matches user-entered value)
     - **EXPECTED OUTCOME**: Tests PASS (confirms Gap 5 is fixed)
     - _Requirements: 2.5_
 
-  - [~] 7.5 Verify Gap 5 preservation tests still pass
+  - [ ] 7.5 Verify Gap 5 preservation tests still pass
     - **Property 2: Preservation** - Bookmark IPC Flow Unchanged
     - Re-run the Gap 5 preservation tests from task 2 (after modal confirm: IPC call fires, bookmarks panel refreshes, tab switches to 'bookmarks', success AI-log emitted)
     - **EXPECTED OUTCOME**: Tests PASS (confirms the full bookmark save flow is intact)
     - _Requirements: 3.2_
 
-- [~] 8. Checkpoint — Ensure all tests pass
+- [ ] 8. Checkpoint — Ensure all tests pass
   - Re-run the complete test suite: `npm test`
   - Confirm all five bug condition exploration tests now PASS (bugs are fixed)
   - Confirm all five preservation property tests still PASS (no regressions)
