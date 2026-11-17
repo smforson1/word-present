@@ -1172,7 +1172,7 @@ export default function OperatorConsole() {
               value={bookmarkLabel}
               onChange={(e) => setBookmarkLabel(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') confirmBookmark(); if (e.key === 'Escape') setPendingBookmark(null); }}
-              className="w-full mt-1 mb-4 px-3 py-2 bg-background border border-border rounded text-sm outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full mt-1 mb-4 px-3 py-2 bg-background border border-border rounded text-sm outline-hidden focus:ring-2 focus:ring-primary/50"
               placeholder="e.g. Sunday sermon opening"
             />
             <div className="flex gap-2 justify-end">
@@ -1182,7 +1182,7 @@ export default function OperatorConsole() {
           </div>
         </div>
       )}
-      <header className="flex justify-between items-center px-6 py-4 border-b border-border bg-card shadow-sm z-10 shrink-0">
+      <header className="flex justify-between items-center px-6 py-4 border-b border-border bg-card shadow-xs z-10 shrink-0">
         <div className="flex items-center gap-3">
           {/* Church logo */}
           <img src="favicon.ico" alt="Church logo" className="w-9 h-9 rounded-md object-contain" />
@@ -1211,7 +1211,7 @@ export default function OperatorConsole() {
                     await window.api.setSettings('selectedTranslation', newTrans);
                   }
                 }} 
-                className="bg-transparent font-bold text-primary border-none outline-none cursor-pointer focus:ring-0"
+                className="bg-transparent font-bold text-primary border-none outline-hidden cursor-pointer focus:ring-0"
               >
                 {availableTranslations.map(t => (
                   <option key={t.translation} value={t.translation} className="bg-card text-foreground">{t.translation}</option>
@@ -1225,7 +1225,7 @@ export default function OperatorConsole() {
         </div>
       </header>
 
-      <div className="flex-grow flex overflow-hidden">
+      <div className="grow flex overflow-hidden">
         {/* LEFT PANE: Audio Monitoring & Speech */}
         <div className="w-[28%] border-r border-border bg-card flex flex-col justify-between overflow-hidden">
           <div className="p-5 border-b border-border space-y-4 shrink-0">
@@ -1239,7 +1239,7 @@ export default function OperatorConsole() {
                 onChange={(e) => {
                   setSelectedAudioDevice(e.target.value);
                 }}
-                className="w-full text-sm bg-background border border-border rounded-md px-2.5 py-1.5 focus:ring-2 outline-none"
+                className="w-full text-sm bg-background border border-border rounded-md px-2.5 py-1.5 focus:ring-2 outline-hidden"
               >
                 {audioInputDevices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label || `Mic ${d.deviceId.slice(0, 5)}`}</option>)}
               </select>
@@ -1255,7 +1255,7 @@ export default function OperatorConsole() {
                   let color = 'bg-primary';
                   if (val > 80) color = 'bg-rose-500';
                   else if (val > 65) color = 'bg-gold';
-                  return <div key={idx} className={`flex-grow h-full transition-all ${active ? color : 'bg-muted-foreground/20'}`} />;
+                  return <div key={idx} className={`grow h-full transition-all ${active ? color : 'bg-muted-foreground/20'}`} />;
                 })}
               </div>
             </div>
@@ -1271,7 +1271,7 @@ export default function OperatorConsole() {
                     onChange={(e) => setIsNoiseGateEnabled(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-7 h-4 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+                  <div className="w-7 h-4 bg-muted peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
                 </label>
               </div>
 
@@ -1389,7 +1389,7 @@ export default function OperatorConsole() {
             })()}
 
           </div>
-          <div className="flex-grow p-5 flex flex-col overflow-hidden">
+          <div className="grow p-5 flex flex-col overflow-hidden">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Live Transcription</h3>
               {transcript && (
@@ -1407,7 +1407,7 @@ export default function OperatorConsole() {
                 </button>
               )}
             </div>
-            <div className="flex-grow overflow-y-auto border border-border bg-background rounded-md p-4 custom-scrollbar text-sm font-mono leading-relaxed">
+            <div className="grow overflow-y-auto border border-border bg-background rounded-md p-4 custom-scrollbar text-sm font-mono leading-relaxed">
               {transcript || interimTranscript ? (
                 <div className={`transition-opacity duration-500 ${isFading ? 'opacity-0' : 'opacity-100'}`}>
                   <HighlightedTranscript text={transcript} detectedRefs={detectedRefs} />
@@ -1423,7 +1423,7 @@ export default function OperatorConsole() {
         </div>
 
         {/* MIDDLE PANE: Preview + Content Tabs */}
-        <div className="flex-grow bg-background flex flex-col overflow-hidden border-r border-border">
+        <div className="grow bg-background flex flex-col overflow-hidden border-r border-border">
           {/* Mini Projector Preview */}
           <div className="p-4 border-b border-border flex flex-col gap-3 shrink-0">
             {(() => {
@@ -1475,7 +1475,7 @@ export default function OperatorConsole() {
                         </div>
                         <span>{activeProjected.translation}{activeProjected.secondaryTranslation ? ` + ${activeProjected.secondaryTranslation}` : ''}</span>
                       </div>
-                      <div className="flex-grow flex flex-col items-center justify-center px-4 gap-1 overflow-y-auto">
+                      <div className="grow flex flex-col items-center justify-center px-4 gap-1 overflow-y-auto">
                         {/* Primary Text */}
                         <p
                           className="text-center font-medium whitespace-pre-wrap"
@@ -1595,14 +1595,14 @@ export default function OperatorConsole() {
           </div>
 
           {/* Middle Content */}
-          <div className="flex-grow overflow-hidden bg-background">
+          <div className="grow overflow-hidden bg-background">
             {middleTab === 'browser' && <BibleBrowser translation={translation} showVerseNumbers={showVerseNumbers} onProject={project} onAddBookmark={addBookmark} onAddSchedule={addScheduleItem} />}
             {middleTab === 'search' && <SearchPanel translation={translation} showVerseNumbers={showVerseNumbers} onProject={project} onAddBookmark={addBookmark} onAddSchedule={addScheduleItem} />}
             {middleTab === 'songs' && <SongsPanel onProject={project} onAddSchedule={addScheduleItem} />}
             {middleTab === 'manual' && (
               <div className="p-6">
                 <form onSubmit={handleManualSearch} className="flex gap-2">
-                  <input type="text" placeholder="Enter reference (e.g. John 3:16)" value={manualReference} onChange={(e) => setManualReference(e.target.value)} className="flex-grow px-3 py-2 bg-card border rounded text-sm outline-none focus:ring-2 focus:ring-primary/50" />
+                  <input type="text" placeholder="Enter reference (e.g. John 3:16)" value={manualReference} onChange={(e) => setManualReference(e.target.value)} className="grow px-3 py-2 bg-card border rounded text-sm outline-hidden focus:ring-2 focus:ring-primary/50" />
                   <button type="submit" className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-bold">Project</button>
                 </form>
                 {manualError && <p className="text-xs text-destructive mt-2">{manualError}</p>}
@@ -1610,7 +1610,7 @@ export default function OperatorConsole() {
             )}
             {middleTab === 'ai' && (
               <div className="p-4 h-full flex flex-col overflow-hidden">
-                <div className="flex-grow overflow-y-auto border bg-card rounded p-3 space-y-2 text-xs font-mono custom-scrollbar">
+                <div className="grow overflow-y-auto border bg-card rounded p-3 space-y-2 text-xs font-mono custom-scrollbar">
                   {aiLogs.length > 0 ? aiLogs.map(log => (
                     <div key={log.id} className="flex gap-2 py-0.5">
                       <span className="text-muted-foreground">[{log.timestamp}]</span>
@@ -1640,7 +1640,7 @@ export default function OperatorConsole() {
                 {!isSermonLoggingEnabled && (
                   <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-600 dark:text-amber-400 text-xs shrink-0">
                     <span className="text-lg">⚠️</span>
-                    <div className="flex-grow">
+                    <div className="grow">
                       <p className="font-semibold">Sermon transcript logging is currently disabled.</p>
                       <p className="opacity-90">Real-time transcripts will not be saved for summary sheets. You can enable logging in the Settings tab.</p>
                     </div>
@@ -1653,7 +1653,7 @@ export default function OperatorConsole() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-4 flex-grow overflow-hidden">
+                <div className="grid grid-cols-2 gap-4 grow overflow-hidden">
                   {/* Left Column: Sermon Transcript */}
                   <div className="flex flex-col space-y-2 border border-border rounded-lg bg-card p-3 overflow-hidden">
                     <div className="flex justify-between items-center">
@@ -1663,7 +1663,7 @@ export default function OperatorConsole() {
                     <textarea
                       value={sermonTranscript}
                       onChange={(e) => setSermonTranscript(e.target.value)}
-                      className="flex-grow w-full p-2 bg-background border border-border rounded text-xs font-sans resize-none outline-none focus:ring-1 focus:ring-primary/50 custom-scrollbar text-foreground"
+                      className="grow w-full p-2 bg-background border border-border rounded text-xs font-sans resize-none outline-hidden focus:ring-1 focus:ring-primary/50 custom-scrollbar text-foreground"
                       placeholder="Transcribed sermon audio will accumulate here in real-time. You can also edit this text manually..."
                     />
                   </div>
@@ -1687,7 +1687,7 @@ export default function OperatorConsole() {
                       )}
                     </div>
                     
-                    <div className="flex-grow bg-background border border-border rounded p-2 overflow-y-auto text-xs whitespace-pre-wrap font-sans custom-scrollbar select-text selection:bg-primary/20 text-foreground">
+                    <div className="grow bg-background border border-border rounded p-2 overflow-y-auto text-xs whitespace-pre-wrap font-sans custom-scrollbar select-text selection:bg-primary/20 text-foreground">
                       {isGeneratingSummary ? (
                         <div className="h-full flex flex-col items-center justify-center space-y-2">
                           <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -1737,7 +1737,7 @@ export default function OperatorConsole() {
             <button onClick={() => setRightTab('settings')} className={`flex-1 py-2 text-xs font-bold border-b-2 uppercase tracking-wider transition-colors ${rightTab === 'settings' ? 'border-primary text-primary bg-background' : 'border-transparent text-muted-foreground hover:bg-muted/50'}`}>Settings</button>
           </div>
 
-          <div className="flex-grow overflow-hidden">
+          <div className="grow overflow-hidden">
             {rightTab === 'schedule' && <ServiceSchedule schedule={schedule} setSchedule={setSchedule} onProject={project} />}
             {rightTab === 'bookmarks' && <BookmarksPanel onProject={project} onAddSchedule={addScheduleItem} refreshTrigger={bookmarksRefresh} showVerseNumbers={showVerseNumbers} />}
             
@@ -1753,7 +1753,7 @@ export default function OperatorConsole() {
                     </div>
                   )}
                 </div>
-                <div className="flex-grow overflow-y-auto p-2 space-y-1 custom-scrollbar">
+                <div className="grow overflow-y-auto p-2 space-y-1 custom-scrollbar">
                   {history.length > 0 ? history.map((item, idx) => (
                     <div key={idx} onClick={() => project(item.reference, item.text)} className="p-2 hover:bg-secondary rounded cursor-pointer">
                       <div className="flex justify-between"><span className="text-xs font-bold text-gold">{item.reference}</span><span className="text-[10px] text-muted-foreground">{item.timestamp}</span></div>
@@ -1782,7 +1782,7 @@ export default function OperatorConsole() {
                             await window.api.setSettings('isDualProjectionEnabled', val);
                           }
                         }}
-                        className="h-4 w-4 bg-card border rounded accent-primary outline-none cursor-pointer"
+                        className="h-4 w-4 bg-card border rounded accent-primary outline-hidden cursor-pointer"
                       />
                     </div>
 
@@ -1797,7 +1797,7 @@ export default function OperatorConsole() {
                             await window.api.setSettings('selectedTranslation', newTrans);
                           }
                         }} 
-                        className="w-full text-xs p-2 bg-card border rounded outline-none focus:ring-1"
+                        className="w-full text-xs p-2 bg-card border rounded outline-hidden focus:ring-1"
                       >
                         {availableTranslations.length > 0 ? availableTranslations.map(t => (
                           <option key={t.translation} value={t.translation}>{t.translation} ({t.verseCount} verses)</option>
@@ -1817,7 +1817,7 @@ export default function OperatorConsole() {
                               await window.api.setSettings('secondaryTranslation', newTrans);
                             }
                           }} 
-                          className="w-full text-xs p-2 bg-card border rounded outline-none focus:ring-1"
+                          className="w-full text-xs p-2 bg-card border rounded outline-hidden focus:ring-1"
                         >
                           <option value="">-- Select Secondary --</option>
                           {availableTranslations.filter(t => t.translation !== translation).map(t => (
@@ -1996,7 +1996,7 @@ export default function OperatorConsole() {
                       type="checkbox" 
                       checked={isSermonLoggingEnabled} 
                       onChange={(e) => setIsSermonLoggingEnabled(e.target.checked)}
-                      className="h-4 w-4 bg-card border rounded accent-primary outline-none cursor-pointer"
+                      className="h-4 w-4 bg-card border rounded accent-primary outline-hidden cursor-pointer"
                     />
                   </div>
 
@@ -2014,7 +2014,7 @@ export default function OperatorConsole() {
                         onChange={e => setApiKey(e.target.value)}
                         onBlur={e => { if (window.api) window.api.setSettings('anthropicApiKey', e.target.value); }}
                         placeholder="sk-ant-… (or add to .env file)"
-                        className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
+                        className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-hidden focus:ring-1 font-mono"
                       />
                     )}
                     <p className="text-[10px] text-muted-foreground">
@@ -2041,7 +2041,7 @@ export default function OperatorConsole() {
                         onChange={e => setGroqApiKey(e.target.value)}
                         onBlur={e => { if (window.api) window.api.setSettings('groqApiKey', e.target.value); }}
                         placeholder="gsk_… (or add to .env file)"
-                        className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
+                        className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-hidden focus:ring-1 font-mono"
                       />
                     )}
                     <p className="text-[10px] text-muted-foreground">
@@ -2068,7 +2068,7 @@ export default function OperatorConsole() {
                         onChange={e => setOpenAiApiKey(e.target.value)}
                         onBlur={e => { if (window.api) window.api.setSettings('openAiApiKey', e.target.value); }}
                         placeholder="sk-proj-… (or add to .env file)"
-                        className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
+                        className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-hidden focus:ring-1 font-mono"
                       />
                     )}
                     <p className="text-[10px] text-muted-foreground">
@@ -2087,7 +2087,7 @@ export default function OperatorConsole() {
                         setAiMode(val);
                         if (window.api) window.api.setSettings('aiMode', val);
                       }}
-                      className="w-full text-xs p-2 bg-card border rounded outline-none"
+                      className="w-full text-xs p-2 bg-card border rounded outline-hidden"
                     >
                       <option value="auto-project">Auto-Project — project instantly when detected</option>
                       <option value="suggest-only">Suggest Only — show banner, operator confirms</option>
@@ -2099,7 +2099,7 @@ export default function OperatorConsole() {
                     <select
                       value={speechModelsStatus.activeModel}
                       onChange={e => handleSelectSpeechModel(e.target.value)}
-                      className="w-full text-xs p-2 bg-card border rounded outline-none"
+                      className="w-full text-xs p-2 bg-card border rounded outline-hidden"
                     >
                       {[
                         { id: 'web-speech-api', label: 'Web Speech API (Built-in Browser Speech — Free)' },
@@ -2191,7 +2191,7 @@ export default function OperatorConsole() {
                       onChange={e => setWhisperUrl(e.target.value)}
                       onBlur={e => { if (window.api) window.api.setSettings('whisperUrl', e.target.value); }}
                       placeholder="http://localhost:8080"
-                      className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-none focus:ring-1 font-mono"
+                      className="w-full text-xs px-2 py-1.5 bg-card border rounded outline-hidden focus:ring-1 font-mono"
                     />
                     <p className="text-[10px] text-muted-foreground">Used when Web Speech API is unavailable (most Electron environments).</p>
                   </div>
@@ -2238,7 +2238,7 @@ export default function OperatorConsole() {
                           }
                         }}
                         className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
-                          projectionBgMode === 'color' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          projectionBgMode === 'color' ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
                         Color
@@ -2253,7 +2253,7 @@ export default function OperatorConsole() {
                           }
                         }}
                         className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
-                          projectionBgMode === 'image' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          projectionBgMode === 'image' ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
                         Image
@@ -2272,7 +2272,7 @@ export default function OperatorConsole() {
                           }
                         }}
                         className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
-                          projectionBgMode === 'gradient' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          projectionBgMode === 'gradient' ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
                         HSL
@@ -2292,7 +2292,7 @@ export default function OperatorConsole() {
                           }
                         }}
                         className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
-                          projectionBgMode === 'motion' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          projectionBgMode === 'motion' ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
                         Particles
@@ -2310,7 +2310,7 @@ export default function OperatorConsole() {
                           }
                         }}
                         className={`py-1 text-[10px] font-bold rounded transition-all text-center ${
-                          projectionBgMode === 'video' ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                          projectionBgMode === 'video' ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
                         Video
@@ -2362,7 +2362,7 @@ export default function OperatorConsole() {
                                 }
                               }}
                               className={`relative p-3 rounded overflow-hidden border-2 text-left transition-all h-16 flex flex-col justify-end ${
-                                isActive ? 'border-primary shadow-sm ring-1 ring-primary/20 scale-[1.02]' : 'border-border/60 hover:border-border'
+                                isActive ? 'border-primary shadow-xs ring-1 ring-primary/20 scale-[1.02]' : 'border-border/60 hover:border-border'
                               }`}
                               style={{ background: theme.previewStyle }}
                             >
@@ -2399,7 +2399,7 @@ export default function OperatorConsole() {
                                 }
                               }}
                               className={`relative aspect-video rounded overflow-hidden border-2 transition-all ${
-                                isActive ? 'border-primary shadow-sm ring-1 ring-primary/20 scale-[1.03]' : 'border-border/60 hover:border-border'
+                                isActive ? 'border-primary shadow-xs ring-1 ring-primary/20 scale-[1.03]' : 'border-border/60 hover:border-border'
                               }`}
                               title={theme.name}
                             >
@@ -2423,7 +2423,7 @@ export default function OperatorConsole() {
                                 });
                               }
                             }}
-                            className="relative aspect-video rounded overflow-hidden border-2 border-primary shadow-sm ring-1 ring-primary/20 scale-[1.03]"
+                            className="relative aspect-video rounded overflow-hidden border-2 border-primary shadow-xs ring-1 ring-primary/20 scale-[1.03]"
                             title="Custom Uploaded Image"
                           >
                             <img src={projectionBgImage} alt="Custom upload" className="w-full h-full object-cover" />
@@ -2509,7 +2509,7 @@ export default function OperatorConsole() {
                               window.api.broadcastStatus({ projectionParticleColor: val });
                             }
                           }}
-                          className="w-full text-xs p-1.5 bg-card border rounded outline-none"
+                          className="w-full text-xs p-1.5 bg-card border rounded outline-hidden"
                         >
                           <option value="gold">Warm Gold</option>
                           <option value="white">Shimmering White</option>
@@ -2601,7 +2601,7 @@ export default function OperatorConsole() {
                             }}
                             className={`flex items-center justify-between px-3 py-2 rounded border transition-all text-left ${
                               isActive
-                                ? 'border-primary bg-primary/10 shadow-sm'
+                                ? 'border-primary bg-primary/10 shadow-xs'
                                 : 'border-border/60 hover:border-border bg-transparent'
                             }`}
                           >
@@ -2643,7 +2643,7 @@ export default function OperatorConsole() {
                           key={cat}
                           onClick={() => setEditingPresetCategory(cat)}
                           className={`flex-1 py-1 font-bold rounded capitalize transition-all ${
-                            editingPresetCategory === cat ? 'bg-background text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                            editingPresetCategory === cat ? 'bg-background text-primary shadow-xs' : 'text-muted-foreground hover:text-foreground'
                           }`}
                         >
                           {cat}
@@ -2847,7 +2847,7 @@ export default function OperatorConsole() {
                                 <select
                                   value={activeP.projectionParticleColor ?? 'gold'}
                                   onChange={e => updatePresetField('projectionParticleColor', e.target.value)}
-                                  className="w-full text-xs p-1 bg-card border rounded outline-none"
+                                  className="w-full text-xs p-1 bg-card border rounded outline-hidden"
                                 >
                                   <option value="gold">Warm Gold</option>
                                   <option value="white">Shimmering White</option>
@@ -2913,7 +2913,7 @@ export default function OperatorConsole() {
                             <select
                               value={activeP.projectionFontFamily ?? 'serif'}
                               onChange={e => updatePresetField('projectionFontFamily', e.target.value)}
-                              className="w-full text-xs p-1.5 bg-card border rounded outline-none"
+                              className="w-full text-xs p-1.5 bg-card border rounded outline-hidden"
                             >
                               <option value="cinzel">Cinzel (Classical)</option>
                               <option value="eb-garamond">EB Garamond (Traditional)</option>

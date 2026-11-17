@@ -78,7 +78,7 @@ export default function BookmarksPanel({ onProject, onAddSchedule, refreshTrigge
         <h2 className="text-sm font-bold tracking-wider uppercase text-muted-foreground">Favorites & Bookmarks</h2>
       </div>
 
-      <div className="flex-grow overflow-y-auto custom-scrollbar">
+      <div className="grow overflow-y-auto custom-scrollbar">
         {loading ? (
           <div className="p-8 text-center text-sm text-muted-foreground animate-pulse">Loading...</div>
         ) : bookmarks.length > 0 ? (

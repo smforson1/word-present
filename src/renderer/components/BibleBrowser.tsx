@@ -135,7 +135,7 @@ export default function BibleBrowser({ translation, showVerseNumbers, onProject,
       </div>
 
       {/* Content Area */}
-      <div className="flex-grow overflow-hidden flex relative">
+      <div className="grow overflow-hidden flex relative">
         
         {/* View 1: Books */}
         {!selectedBook && (
@@ -144,7 +144,7 @@ export default function BibleBrowser({ translation, showVerseNumbers, onProject,
               <button
                 key={book}
                 onClick={() => setSelectedBook(book)}
-                className="py-3 px-4 bg-background border border-border rounded-lg text-sm font-semibold hover:border-primary hover:bg-secondary transition-all text-center shadow-sm"
+                className="py-3 px-4 bg-background border border-border rounded-lg text-sm font-semibold hover:border-primary hover:bg-secondary transition-all text-center shadow-xs"
               >
                 {book}
               </button>
@@ -163,7 +163,7 @@ export default function BibleBrowser({ translation, showVerseNumbers, onProject,
               <button
                 key={idx}
                 onClick={() => setSelectedChapter(idx + 1)}
-                className="aspect-square bg-background border border-border rounded-lg flex items-center justify-center text-xl font-bold hover:border-primary hover:bg-secondary hover:text-primary transition-all shadow-sm"
+                className="aspect-square bg-background border border-border rounded-lg flex items-center justify-center text-xl font-bold hover:border-primary hover:bg-secondary hover:text-primary transition-all shadow-xs"
               >
                 {idx + 1}
               </button>
@@ -174,7 +174,7 @@ export default function BibleBrowser({ translation, showVerseNumbers, onProject,
         {/* View 3: Verses */}
         {selectedBook && selectedChapter && (
           <div className="w-full h-full flex flex-col">
-            <div className="flex-grow overflow-y-auto custom-scrollbar p-4 space-y-1">
+            <div className="grow overflow-y-auto custom-scrollbar p-4 space-y-1">
               {verses.map((v) => {
                 const isSelected = selectedVerses.includes(v.verse);
                 return (
@@ -225,7 +225,7 @@ export default function BibleBrowser({ translation, showVerseNumbers, onProject,
                   )}
                   <button 
                     onClick={handleProjectSelected}
-                    className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity flex items-center gap-1 shadow-sm"
+                    className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity flex items-center gap-1 shadow-xs"
                   >
                     <Play className="w-3 h-3" /> Project
                   </button>

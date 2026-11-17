@@ -238,7 +238,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
               <select 
                 value={newType} 
                 onChange={(e) => setNewType(e.target.value as any)}
-                className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-none focus:ring-1 focus:ring-primary/50"
+                className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-hidden focus:ring-1 focus:ring-primary/50"
               >
                 <option value="song">Song / Lyrics</option>
                 <option value="announcement">Announcement / Slide</option>
@@ -252,7 +252,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
                 placeholder="e.g. Amazing Grace"
                 value={newReference}
                 onChange={(e) => setNewReference(e.target.value)}
-                className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-none focus:ring-1 focus:ring-primary/50"
+                className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-hidden focus:ring-1 focus:ring-primary/50"
                 required
               />
             </div>
@@ -265,7 +265,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
               rows={3}
-              className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-none focus:ring-1 focus:ring-primary/50 font-mono leading-tight resize-none"
+              className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-hidden focus:ring-1 focus:ring-primary/50 font-mono leading-tight resize-none"
               required
             />
           </div>
@@ -299,7 +299,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
         </button>
       </div>
 
-      <div className="flex-grow overflow-y-auto custom-scrollbar p-2 space-y-1.5">
+      <div className="grow overflow-y-auto custom-scrollbar p-2 space-y-1.5">
         {schedule.length > 0 ? (
           schedule.map((item, idx) => {
             const isEditing = editingId === item.id;
@@ -324,7 +324,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
                 )}
 
                 {/* Content Area */}
-                <div className="flex-grow p-3 min-w-0">
+                <div className="grow p-3 min-w-0">
                   {isEditing ? (
                     <div className="space-y-2">
                       <div className="flex justify-between items-center">
@@ -338,7 +338,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
                         type="text"
                         value={editReference}
                         onChange={(e) => setEditReference(e.target.value)}
-                        className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-none focus:ring-1 focus:ring-primary/50 font-bold"
+                        className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-hidden focus:ring-1 focus:ring-primary/50 font-bold"
                         placeholder="Title / Reference"
                         required
                       />
@@ -346,7 +346,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
                         value={editText}
                         onChange={(e) => setEditText(e.target.value)}
                         rows={2}
-                        className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-none focus:ring-1 focus:ring-primary/50 font-mono resize-none leading-tight"
+                        className="w-full text-xs px-2 py-1 bg-card border border-border rounded outline-hidden focus:ring-1 focus:ring-primary/50 font-mono resize-none leading-tight"
                         placeholder="Content text"
                         required
                       />
@@ -359,7 +359,7 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
                       <div>
                         <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                           {renderIcon(item.type)}
-                          <p className="text-sm font-bold text-gold truncate flex-grow min-w-0">{item.reference}</p>
+                          <p className="text-sm font-bold text-gold truncate grow min-w-0">{item.reference}</p>
                           {renderBadge(item.type)}
                         </div>
                         <p className="text-xs text-foreground line-clamp-2 leading-snug">{item.text}</p>
@@ -373,14 +373,14 @@ export default function ServiceSchedule({ schedule, setSchedule, onProject }: Se
                   <div className="w-10 flex flex-col items-center justify-center border-l border-border bg-muted/50 divide-y divide-border shrink-0">
                     <button 
                       onClick={() => startEdit(item)}
-                      className="flex-grow w-full flex items-center justify-center p-2 text-muted-foreground hover:bg-secondary transition-colors"
+                      className="grow w-full flex items-center justify-center p-2 text-muted-foreground hover:bg-secondary transition-colors"
                       title="Edit Item"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button 
                       onClick={() => removeItem(item.id)}
-                      className="flex-grow w-full flex items-center justify-center p-2 text-destructive hover:bg-destructive/10 transition-colors"
+                      className="grow w-full flex items-center justify-center p-2 text-destructive hover:bg-destructive/10 transition-colors"
                       title="Remove Item"
                     >
                       <Trash2 className="w-3.5 h-3.5" />

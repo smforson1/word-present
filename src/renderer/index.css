@@ -1,113 +1,194 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
 
-/* ─────────────────────────────────────────────────────────────────────────────
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/* Gold utility — use as className="text-gold" / "bg-gold" etc. */
+
+@utility text-gold {
+  color: var(--gold);
+}
+
+@utility bg-gold {
+  background-color: var(--gold);
+}
+
+@utility border-gold {
+  border-color: var(--gold);
+}
+
+@utility ring-gold {
+  --tw-ring-color: var(--gold);
+}
+
+@layer utilities {
+  /* ─────────────────────────────────────────────────────────────────────────────
    Church Brand Tokens — Blue & Gold
    Primary blue  : #1B4D9E  → oklch(0.42 0.15 258)
    Gold accent   : #C9A227  → oklch(0.73 0.14 82)
    ───────────────────────────────────────────────────────────────────────────── */
 
-:root {
-  --radius: 0.625rem;
+  :root {
+    --radius: 0.625rem;
 
-  /* Surfaces */
-  --background:        oklch(0.98 0.003 240);
-  --foreground:        oklch(0.15 0.02  258);
-  --card:              oklch(1    0     0);
-  --card-foreground:   oklch(0.15 0.02  258);
-  --popover:           oklch(1    0     0);
-  --popover-foreground:oklch(0.15 0.02  258);
+    /* Surfaces */
+    --background: oklch(0.98 0.003 240);
+    --foreground: oklch(0.15 0.02 258);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.15 0.02 258);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.15 0.02 258);
 
-  /* Brand — blue */
-  --primary:           oklch(0.42 0.15  258);
-  --primary-foreground:oklch(0.98 0     0);
+    /* Brand — blue */
+    --primary: oklch(0.42 0.15 258);
+    --primary-foreground: oklch(0.98 0 0);
 
-  /* Brand — gold */
-  --gold:              oklch(0.73 0.14  82);
-  --gold-foreground:   oklch(0.15 0.02  258);
+    /* Brand — gold */
+    --gold: oklch(0.73 0.14 82);
+    --gold-foreground: oklch(0.15 0.02 258);
 
-  /* Neutrals */
-  --secondary:         oklch(0.94 0.01  240);
-  --secondary-foreground:oklch(0.25 0.02 258);
-  --muted:             oklch(0.94 0.01  240);
-  --muted-foreground:  oklch(0.52 0.03  258);
-  --accent:            oklch(0.93 0.03  258);
-  --accent-foreground: oklch(0.25 0.02  258);
+    /* Neutrals */
+    --secondary: oklch(0.94 0.01 240);
+    --secondary-foreground: oklch(0.25 0.02 258);
+    --muted: oklch(0.94 0.01 240);
+    --muted-foreground: oklch(0.52 0.03 258);
+    --accent: oklch(0.93 0.03 258);
+    --accent-foreground: oklch(0.25 0.02 258);
 
-  /* Semantic */
-  --destructive:       oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border:            oklch(0.88 0.01  240);
-  --input:             oklch(0.88 0.01  240);
-  --ring:              oklch(0.42 0.15  258);
+    /* Semantic */
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(0.88 0.01 240);
+    --input: oklch(0.88 0.01 240);
+    --ring: oklch(0.42 0.15 258);
 
-  /* Charts */
-  --chart-1:           oklch(0.42 0.15  258);
-  --chart-2:           oklch(0.73 0.14  82);
-  --chart-3:           oklch(0.55 0.10  210);
-  --chart-4:           oklch(0.65 0.12  45);
-  --chart-5:           oklch(0.50 0.13  285);
+    /* Charts */
+    --chart-1: oklch(0.42 0.15 258);
+    --chart-2: oklch(0.73 0.14 82);
+    --chart-3: oklch(0.55 0.1 210);
+    --chart-4: oklch(0.65 0.12 45);
+    --chart-5: oklch(0.5 0.13 285);
 
-  /* Sidebar */
-  --sidebar:           oklch(0.96 0.005 240);
-  --sidebar-foreground:oklch(0.15 0.02  258);
-  --sidebar-primary:   oklch(0.42 0.15  258);
-  --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent:    oklch(0.93 0.03  258);
-  --sidebar-accent-foreground:  oklch(0.25 0.02 258);
-  --sidebar-border:    oklch(0.88 0.01  240);
-  --sidebar-ring:      oklch(0.42 0.15  258);
-}
+    /* Sidebar */
+    --sidebar: oklch(0.96 0.005 240);
+    --sidebar-foreground: oklch(0.15 0.02 258);
+    --sidebar-primary: oklch(0.42 0.15 258);
+    --sidebar-primary-foreground: oklch(0.98 0 0);
+    --sidebar-accent: oklch(0.93 0.03 258);
+    --sidebar-accent-foreground: oklch(0.25 0.02 258);
+    --sidebar-border: oklch(0.88 0.01 240);
+    --sidebar-ring: oklch(0.42 0.15 258);
+  }
 
-.dark {
-  /* Surfaces — deep navy-charcoal */
-  --background:        oklch(0.14 0.025 258);
-  --foreground:        oklch(0.95 0.005 240);
-  --card:              oklch(0.19 0.03  258);
-  --card-foreground:   oklch(0.95 0.005 240);
-  --popover:           oklch(0.19 0.03  258);
-  --popover-foreground:oklch(0.95 0.005 240);
+  .dark {
+    /* Surfaces — deep navy-charcoal */
+    --background: oklch(0.14 0.025 258);
+    --foreground: oklch(0.95 0.005 240);
+    --card: oklch(0.19 0.03 258);
+    --card-foreground: oklch(0.95 0.005 240);
+    --popover: oklch(0.19 0.03 258);
+    --popover-foreground: oklch(0.95 0.005 240);
 
-  /* Brand — blue (lighter for dark bg) */
-  --primary:           oklch(0.62 0.15  258);
-  --primary-foreground:oklch(0.10 0.02  258);
+    /* Brand — blue (lighter for dark bg) */
+    --primary: oklch(0.62 0.15 258);
+    --primary-foreground: oklch(0.1 0.02 258);
 
-  /* Brand — gold */
-  --gold:              oklch(0.78 0.14  82);
-  --gold-foreground:   oklch(0.12 0.02  258);
+    /* Brand — gold */
+    --gold: oklch(0.78 0.14 82);
+    --gold-foreground: oklch(0.12 0.02 258);
 
-  /* Neutrals */
-  --secondary:         oklch(0.25 0.03  258);
-  --secondary-foreground:oklch(0.92 0.005 240);
-  --muted:             oklch(0.25 0.03  258);
-  --muted-foreground:  oklch(0.65 0.02  258);
-  --accent:            oklch(0.27 0.04  258);
-  --accent-foreground: oklch(0.95 0.005 240);
+    /* Neutrals */
+    --secondary: oklch(0.25 0.03 258);
+    --secondary-foreground: oklch(0.92 0.005 240);
+    --muted: oklch(0.25 0.03 258);
+    --muted-foreground: oklch(0.65 0.02 258);
+    --accent: oklch(0.27 0.04 258);
+    --accent-foreground: oklch(0.95 0.005 240);
 
-  /* Semantic */
-  --destructive:       oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border:            oklch(1 0 0 / 10%);
-  --input:             oklch(1 0 0 / 14%);
-  --ring:              oklch(0.62 0.15  258);
+    /* Semantic */
+    --destructive: oklch(0.704 0.191 22.216);
+    --destructive-foreground: oklch(0.985 0 0);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 14%);
+    --ring: oklch(0.62 0.15 258);
 
-  /* Charts */
-  --chart-1:           oklch(0.62 0.15  258);
-  --chart-2:           oklch(0.78 0.14  82);
-  --chart-3:           oklch(0.65 0.10  210);
-  --chart-4:           oklch(0.72 0.12  45);
-  --chart-5:           oklch(0.58 0.13  285);
+    /* Charts */
+    --chart-1: oklch(0.62 0.15 258);
+    --chart-2: oklch(0.78 0.14 82);
+    --chart-3: oklch(0.65 0.1 210);
+    --chart-4: oklch(0.72 0.12 45);
+    --chart-5: oklch(0.58 0.13 285);
 
-  /* Sidebar */
-  --sidebar:           oklch(0.19 0.03  258);
-  --sidebar-foreground:oklch(0.95 0.005 240);
-  --sidebar-primary:   oklch(0.62 0.15  258);
-  --sidebar-primary-foreground: oklch(0.10 0.02 258);
-  --sidebar-accent:    oklch(0.27 0.04  258);
-  --sidebar-accent-foreground:  oklch(0.95 0.005 240);
-  --sidebar-border:    oklch(1 0 0 / 10%);
-  --sidebar-ring:      oklch(0.62 0.15  258);
+    /* Sidebar */
+    --sidebar: oklch(0.19 0.03 258);
+    --sidebar-foreground: oklch(0.95 0.005 240);
+    --sidebar-primary: oklch(0.62 0.15 258);
+    --sidebar-primary-foreground: oklch(0.1 0.02 258);
+    --sidebar-accent: oklch(0.27 0.04 258);
+    --sidebar-accent-foreground: oklch(0.95 0.005 240);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.62 0.15 258);
+  }
 }
 
 @layer base {
@@ -118,16 +199,8 @@
     @apply bg-background text-foreground font-sans;
   }
   input:focus, select:focus, textarea:focus, button:focus-visible {
-    @apply outline-none ring-2 ring-ring;
+    @apply outline-hidden ring-2 ring-ring;
   }
-}
-
-/* Gold utility — use as className="text-gold" / "bg-gold" etc. */
-@layer utilities {
-  .text-gold   { color: var(--gold); }
-  .bg-gold     { background-color: var(--gold); }
-  .border-gold { border-color: var(--gold); }
-  .ring-gold   { --tw-ring-color: var(--gold); }
 }
 
 /* Custom Scrollbars */

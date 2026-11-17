@@ -185,7 +185,7 @@ export default function ProjectionScreen() {
           style={{ backgroundImage: `url(${bgImage})` }}
         >
           {/* Dark legibility gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/50 to-black/65" />
+          <div className="absolute inset-0 bg-linear-to-b from-black/40 via-black/50 to-black/65" />
         </div>
       )}
 
@@ -200,7 +200,7 @@ export default function ProjectionScreen() {
           }`}
         >
           {/* Dark legibility gradient overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-black/20 to-black/35" />
+          <div className="absolute inset-0 bg-linear-to-b from-black/10 via-black/20 to-black/35" />
         </div>
       )}
 
@@ -213,7 +213,7 @@ export default function ProjectionScreen() {
             colorTheme={particleColor}
           />
           {/* Dark legibility overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-black/45 to-black/60 z-0 pointer-events-none" />
+          <div className="absolute inset-0 bg-linear-to-b from-black/30 via-black/45 to-black/60 z-0 pointer-events-none" />
         </>
       )}
 
@@ -231,7 +231,7 @@ export default function ProjectionScreen() {
             onError={(e) => console.error('Video background load error:', e)}
           />
           {/* Dark legibility overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/55 to-black/70 z-0 pointer-events-none" />
+          <div className="absolute inset-0 bg-linear-to-b from-black/40 via-black/55 to-black/70 z-0 pointer-events-none" />
         </>
       )}
 
@@ -260,7 +260,7 @@ export default function ProjectionScreen() {
           </div>
 
           {/* Main Verse Text Section */}
-          <div className="flex-grow flex flex-col items-center justify-center py-6 gap-3 overflow-y-auto">
+          <div className="grow flex flex-col items-center justify-center py-6 gap-3 overflow-y-auto">
             {/* Primary Translation Verse or Lyrics */}
             <p
               className="text-center font-medium drop-shadow-md text-zinc-100 max-w-[85vw] whitespace-pre-wrap"

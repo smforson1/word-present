@@ -165,14 +165,14 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
       {/* Left Column: Song List & Search */}
       <div className="w-[40%] flex flex-col h-full overflow-hidden bg-card/10">
         <div className="p-3 border-b flex gap-2 shrink-0">
-          <div className="relative flex-grow">
+          <div className="relative grow">
             <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-muted-foreground" />
             <input
               type="text"
               placeholder="Search songs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-card border rounded text-xs outline-none focus:ring-2 focus:ring-primary/50"
+              className="w-full pl-8 pr-3 py-1.5 bg-card border rounded text-xs outline-hidden focus:ring-2 focus:ring-primary/50"
             />
           </div>
           <button
@@ -184,7 +184,7 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
           </button>
         </div>
 
-        <div className="flex-grow overflow-y-auto custom-scrollbar">
+        <div className="grow overflow-y-auto custom-scrollbar">
           {songs.length > 0 ? (
             songs.map((song) => (
               <div
@@ -262,7 +262,7 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
             </div>
 
             {/* Slides grid list */}
-            <div className="flex-grow p-4 overflow-y-auto space-y-3 custom-scrollbar">
+            <div className="grow p-4 overflow-y-auto space-y-3 custom-scrollbar">
               {slides.map((slide, idx) => (
                 <div
                   key={idx}
@@ -287,7 +287,7 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
             </div>
           </div>
         ) : (
-          <div className="flex-grow flex flex-col items-center justify-center gap-2 text-muted-foreground">
+          <div className="grow flex flex-col items-center justify-center gap-2 text-muted-foreground">
             <Music className="w-8 h-8 opacity-20" />
             <span className="text-xs font-light">Select a song from the list to display slides.</span>
           </div>
@@ -307,7 +307,7 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
               </button>
             </div>
 
-            <form onSubmit={handleSaveSong} className="flex-grow p-4 space-y-4 overflow-y-auto custom-scrollbar flex flex-col">
+            <form onSubmit={handleSaveSong} className="grow p-4 space-y-4 overflow-y-auto custom-scrollbar flex flex-col">
               <div className="grid grid-cols-2 gap-3 shrink-0">
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] uppercase font-bold text-muted-foreground">Song Title *</label>
@@ -316,7 +316,7 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
                     value={formTitle}
                     onChange={(e) => setFormTitle(e.target.value)}
                     placeholder="e.g. Amazing Grace"
-                    className="px-3 py-2 bg-background border rounded text-xs outline-none focus:ring-2 focus:ring-primary/50"
+                    className="px-3 py-2 bg-background border rounded text-xs outline-hidden focus:ring-2 focus:ring-primary/50"
                   />
                 </div>
                 <div className="flex flex-col gap-1">
@@ -326,12 +326,12 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
                     value={formArtist}
                     onChange={(e) => setFormArtist(e.target.value)}
                     placeholder="e.g. John Newton"
-                    className="px-3 py-2 bg-background border rounded text-xs outline-none focus:ring-2 focus:ring-primary/50"
+                    className="px-3 py-2 bg-background border rounded text-xs outline-hidden focus:ring-2 focus:ring-primary/50"
                   />
                 </div>
               </div>
 
-              <div className="flex flex-col gap-1 flex-grow">
+              <div className="flex flex-col gap-1 grow">
                 <label className="text-[10px] uppercase font-bold text-muted-foreground">Lyrics *</label>
                 <span className="text-[9px] text-muted-foreground leading-normal mb-1">
                   Separate slides using double newlines. You can tag slides with section names in brackets on the first line of the block (e.g. [Verse 1] or [Chorus]).
@@ -340,7 +340,7 @@ export default function SongsPanel({ onProject, onAddSchedule }: SongsPanelProps
                   value={formLyrics}
                   onChange={(e) => setFormLyrics(e.target.value)}
                   placeholder="[Verse 1]&#10;Amazing grace! How sweet the sound&#10;That saved a wretch like me!&#10;&#10;[Chorus]&#10;My chains are gone, I've been set free..."
-                  className="flex-grow p-3 bg-background border rounded text-xs font-mono outline-none focus:ring-2 focus:ring-primary/50 h-64 resize-none"
+                  className="grow p-3 bg-background border rounded text-xs font-mono outline-hidden focus:ring-2 focus:ring-primary/50 h-64 resize-none"
                 />
               </div>
 

@@ -87,7 +87,7 @@ export default function MobileRemote() {
             <input
               type="text" maxLength={4} pattern="\d{4}" placeholder="0000" value={pin}
               onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-              className="w-full text-center text-3xl tracking-widest font-mono py-3 bg-background border border-border rounded-md focus:ring-2 focus:ring-primary outline-none"
+              className="w-full text-center text-3xl tracking-widest font-mono py-3 bg-background border border-border rounded-md focus:ring-2 focus:ring-primary outline-hidden"
               required autoFocus
             />
             {authError && (
@@ -116,9 +116,9 @@ export default function MobileRemote() {
         </div>
       </header>
 
-      <main className="flex-grow space-y-6">
+      <main className="grow space-y-6">
         {/* Active Scripture */}
-        <div className="bg-card border border-border rounded-lg p-5 shadow-sm space-y-4 min-h-[160px] flex flex-col justify-between relative overflow-hidden">
+        <div className="bg-card border border-border rounded-lg p-5 shadow-xs space-y-4 min-h-[160px] flex flex-col justify-between relative overflow-hidden">
           {blackout && <div className="absolute inset-0 bg-black/80 z-10 flex items-center justify-center text-red-500 font-bold uppercase tracking-widest">Blackout Active</div>}
           <div className="space-y-2 relative z-0">
             <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">Currently Projecting</div>
@@ -150,7 +150,7 @@ export default function MobileRemote() {
             <input
               type="text" placeholder="e.g. John 3:16" value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-grow px-3 py-2.5 bg-card border border-border rounded-md text-sm outline-none focus:ring-2 focus:ring-primary"
+              className="grow px-3 py-2.5 bg-card border border-border rounded-md text-sm outline-hidden focus:ring-2 focus:ring-primary"
             />
             <button type="submit" className="bg-primary text-primary-foreground font-semibold px-4 rounded-md">Go</button>
           </div>

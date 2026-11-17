@@ -58,12 +58,12 @@ export default function SearchPanel({ translation, showVerseNumbers, onProject, 
             placeholder="Search scripture text (min 3 chars)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-md text-sm focus:ring-2 focus:ring-primary/50 outline-none"
+            className="w-full pl-9 pr-3 py-2 bg-background border border-border rounded-md text-sm focus:ring-2 focus:ring-primary/50 outline-hidden"
           />
         </div>
       </div>
 
-      <div className="flex-grow overflow-y-auto custom-scrollbar">
+      <div className="grow overflow-y-auto custom-scrollbar">
         {isSearching && (
           <div className="p-8 text-center text-sm text-muted-foreground italic animate-pulse">
             Searching {translation}...
@@ -103,7 +103,7 @@ export default function SearchPanel({ translation, showVerseNumbers, onProject, 
                       )}
                       <button 
                         onClick={() => onProject(reference, showVerseNumbers ? `[${res.verse}] ${res.text}` : res.text)}
-                        className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity flex items-center gap-1 shadow-sm"
+                        className="px-4 py-1.5 text-xs font-bold bg-primary text-primary-foreground rounded hover:opacity-90 transition-opacity flex items-center gap-1 shadow-xs"
                       >
                         <Play className="w-3 h-3" /> Project
                       </button>
