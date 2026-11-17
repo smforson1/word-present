@@ -1,6 +1,6 @@
 /**
  * Offline Speech-to-Text Engine
- * Uses @xenova/transformers (Whisper base.en) — pure WASM, zero internet at runtime.
+ * Uses @huggingface/transformers (Whisper) — pure WASM, zero internet at runtime.
  *
  * Audio input: Float32Array PCM at 16kHz, decoded in the renderer where AudioContext
  * is available, then passed here as a plain number[] over IPC.
@@ -15,7 +15,7 @@ const MODEL_CACHE_DIR = join(app.getPath('userData'), 'whisper-models');
 if (!fs.existsSync(MODEL_CACHE_DIR)) {
   fs.mkdirSync(MODEL_CACHE_DIR, { recursive: true });
 }
-process.env.XENOVA_CACHE_DIR = MODEL_CACHE_DIR;
+process.env.HF_HOME = MODEL_CACHE_DIR;
 
 // ── Pipeline state ────────────────────────────────────────────────────────────
 let pipeline: any = null;
@@ -53,7 +53,7 @@ export async function initSpeechEngine(onProgress: TranscribeProgress, modelName
     const modelLabel = targetModel.replace('Xenova/whisper-', '');
     onProgress('downloading', `Downloading Whisper ${modelLabel} model (one-time)…`);
 
-    const { pipeline: createPipeline, env } = await import('@xenova/transformers');
+    const { pipeline: createPipeline, env } = await import('@huggingface/transformers');
     env.cacheDir = MODEL_CACHE_DIR;
     env.allowLocalModels = true;
 

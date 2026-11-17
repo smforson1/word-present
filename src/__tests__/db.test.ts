@@ -68,16 +68,25 @@ describe('Bible Database Fuzzy Parser and Resolver', () => {
       expect(formatted4).toBe('Saying genesis by itself should do nothing');
     });
 
-    it('should not detect references without verse numbers to prevent accidental projections', () => {
+    it('should handle chapter-only references by defaulting to verse 1, and not match book-name-only', () => {
+      // Book name alone — no chapter or verse — should never match
       const refsBookOnly = detectScriptureReferencesOffline('Let us look at Genesis');
       expect(refsBookOnly).toHaveLength(0);
 
+      // Chapter-only references now resolve to verse 1 of that chapter
       const refsChapOnly = detectScriptureReferencesOffline('Genesis chapter 1');
-      expect(refsChapOnly).toHaveLength(0);
+      expect(refsChapOnly).toHaveLength(1);
+      expect(refsChapOnly[0].book).toBe('Genesis');
+      expect(refsChapOnly[0].chapter).toBe(1);
+      expect(refsChapOnly[0].verse).toBe(1);
 
       const refsChapOnlyDigit = detectScriptureReferencesOffline('Genesis 1');
-      expect(refsChapOnlyDigit).toHaveLength(0);
+      expect(refsChapOnlyDigit).toHaveLength(1);
+      expect(refsChapOnlyDigit[0].book).toBe('Genesis');
+      expect(refsChapOnlyDigit[0].chapter).toBe(1);
+      expect(refsChapOnlyDigit[0].verse).toBe(1);
 
+      // Explicit verse still works as before
       const refsWithVerse = detectScriptureReferencesOffline('Genesis chapter 1 verse 1');
       expect(refsWithVerse).toHaveLength(1);
       expect(refsWithVerse[0].book).toBe('Genesis');

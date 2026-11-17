@@ -24,7 +24,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['sql.js', 'electron-store', 'pdfkit', 'bufferutil', 'utf-8-validate', '@xenova/transformers'],
+              external: ['sql.js', 'electron-store', 'pdfkit', 'bufferutil', 'utf-8-validate', '@huggingface/transformers'],
             },
           },
         },

@@ -131,7 +131,7 @@ export default function OperatorConsole() {
   const stitcherRef = useRef<TranscriptStitcher>(new TranscriptStitcher(3));
 
   // Network Pairing State
-  const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string; tunnelUrl?: string } | null>(null);
+  const [networkInfo, setNetworkInfo] = useState<{ ip: string; port: number; pin: string } | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [envKeyActive, setEnvKeyActive] = useState(false);
   const [groqEnvKeyActive, setGroqEnvKeyActive] = useState(false);
@@ -430,8 +430,8 @@ export default function OperatorConsole() {
     const unsubscribeAILog = window.api.onAILog((_, log) => addAiLog(log.type, log.message));
     const unsubscribeAISuggest = window.api.onAISuggestion((_, data) => setAiSuggestion(data));
     const unsubscribeStatus = window.api.onStatusUpdate((_, status) => {
-      if (status && status.tunnelUrl !== undefined) {
-        setNetworkInfo(prev => prev ? { ...prev, tunnelUrl: status.tunnelUrl } : null);
+      if (status && (status as any).tunnelUrl !== undefined) {
+        // tunnelUrl removed — no-op for backwards compatibility
       }
     });
 
@@ -460,7 +460,7 @@ export default function OperatorConsole() {
 
   useEffect(() => {
     if (networkInfo) {
-      const url = networkInfo.tunnelUrl || `http://${networkInfo.ip}:${networkInfo.port}/?view=remote`;
+      const url = `http://${networkInfo.ip}:${networkInfo.port}/?view=remote`;
       QRCode.toDataURL(url)
         .then((dataUrl: string) => setQrDataUrl(dataUrl))
         .catch((err: any) => console.error('[Startup] QR Code generation failed:', err));
@@ -1974,12 +1974,7 @@ export default function OperatorConsole() {
                   <h3 className="text-xs font-bold uppercase text-muted-foreground border-b pb-1">Network & Remote</h3>
                   {networkInfo ? (
                     <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">LAN Fallback: <strong>{networkInfo.ip}:{networkInfo.port}</strong> | PIN: <strong className="text-primary">{networkInfo.pin}</strong></p>
-                      {networkInfo.tunnelUrl ? (
-                        <p className="text-xs text-muted-foreground">Cloud Link: <a href={`${networkInfo.tunnelUrl}/?view=remote`} target="_blank" rel="noreferrer" className="text-primary underline font-semibold">{networkInfo.tunnelUrl}</a></p>
-                      ) : (
-                        <p className="text-xs text-muted-foreground animate-pulse">Initializing secure cloud link...</p>
-                      )}
+                      <p className="text-xs text-muted-foreground">LAN: <strong>{networkInfo.ip}:{networkInfo.port}</strong> | PIN: <strong className="text-primary">{networkInfo.pin}</strong></p>
                       {qrDataUrl && (
                         <div className="mt-3">
                           <p className="text-xs text-muted-foreground font-semibold mb-1">Scan to connect mobile remote:</p>

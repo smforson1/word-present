@@ -1,6 +1,6 @@
 /**
  * Whisper Web Worker
- * Loads @xenova/transformers Whisper tiny.en in a Web Worker so it doesn't
+ * Loads @huggingface/transformers Whisper tiny.en in a Web Worker so it doesn't
  * block the UI thread. Receives decoded Float32Array PCM at 16kHz and returns
  * transcript text.
  *
@@ -8,7 +8,7 @@
  * AudioContext for decoding is done on the main renderer thread before sending.
  */
 
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 
 // Use the renderer's cache location
 env.allowLocalModels = false; // always fetch from HuggingFace CDN on first use, then cached by browser
@@ -75,3 +75,5 @@ self.addEventListener('message', async (event: MessageEvent) => {
     }
   }
 });
+
+// this is a com

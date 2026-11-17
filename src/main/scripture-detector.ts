@@ -127,6 +127,8 @@ function splitSingleNumber(book: string, numStr: string): { chapter: number; ver
 
   const len = numStr.length;
   if (len === 2) {
+    // In Psalms, 2-digit numbers like "23" in "Psalm 23" are chapter citations, not chapter 2 verse 3
+    if (book === 'Psalms') return null;
     // "12" -> Chapter 1, Verse 2
     const ch = parseInt(numStr[0], 10);
     const vs = parseInt(numStr[1], 10);
@@ -196,6 +198,7 @@ function splitSingleNumber(book: string, numStr: string): { chapter: number; ver
 //   "john 3:16"                   (already numeric)
 //   "john chapter 3 verse 16"
 //   "1 corinthians 13 4 through 7"
+//   "Genesis chapter 6"          (chapter only -> defaults to verse 1)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BOOK_NAMES_UNION = Object.keys(BOOK_MAP)
@@ -212,12 +215,20 @@ const BOOK_PATTERN = `\\b(?:${BOOK_NAMES_UNION})\\b`;
 
 // Chapter:Verse or Chapter Verse (with optional verse range)
 const CHAP_VERSE_COLON = `(\\d{1,3}):(\\d{1,3})(?:\\s*[-–through]+\\s*(\\d{1,3}))?`;
-const CHAP_VERSE_WORDS = `chapter\\s+(\\d{1,3})(?:(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse\\s+number|verse|verses)\\s*|\\s*[,;]\\s*(?:verse\\s+number|verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?)?`;
+
+// Separator between chapter and verse when chapter is explicit:
+// Handles "chapter 6 verse 5", "chapter 6 and verse 5", "chapter 6 from verse 5", "chapter 6, let's read verse 5", or "chapter 6 5"
+const CHAP_TO_VERSE_SEP = `(?:\\s*(?:,|;|and)?\\s*(?:we\\s+will\\s+read|we\\s+are\\s+reading|we\\s+read|let's\\s+read|reading\\s+from|look\\s+at|looking\\s+at|from|at)?\\s*(?:verse\\s+number|verse|verses)\\s*|\\s+|\\s*[,;]\\s*)`;
+const CHAP_VERSE_WORDS = `chapter\\s+(\\d{1,3})(?:${CHAP_TO_VERSE_SEP}(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?)?`;
+
 const CHAP_VERSE_SPACE = `(\\d{1,3})(?:\\s+|\\s*[,;]\\s*|\\s*(?:verse\\s+number|verse|verses)\\s*|\\s*[,;]\\s*(?:verse\\s+number|verse|verses)\\s*)(\\d{1,3})(?:\\s*(?:through|-|to)\\s*(\\d{1,3}))?`;
 const CHAP_VERSE_SINGLE = `(\\d{2,4})`;
 
+// Book + Chapter only: e.g. "turn to Genesis 6", "open to Romans 8", "Psalm 23", "Genesis 6"
+const CHAP_ONLY = `(\\d{1,3})\\b`;
+
 // Full patterns — ordered most-specific to least-specific
-const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' | 'single' }> = [
+const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' | 'single' | 'chapterOnly' }> = [
   {
     re: new RegExp(
       `(?:book\\s+of\\s+|turn\\s+to\\s+|open\\s+to\\s+|found\\s+in\\s+|go\\s+to\\s+|in\\s+)?` +
@@ -246,6 +257,13 @@ const PATTERNS: Array<{ re: RegExp; groups: 'colon' | 'words' | 'space' | 'singl
       CHAP_VERSE_SINGLE + `\\b`, 'gi'),
     groups: 'single',
   },
+  {
+    re: new RegExp(
+      `(?:book\\s+of\\s+|turn\\s+to\\s+|open\\s+to\\s+|found\\s+in\\s+|go\\s+to\\s+|in\\s+|read\\s+)?` +
+      `(${BOOK_PATTERN})\\s+` +
+      CHAP_ONLY, 'gi'),
+    groups: 'chapterOnly',
+  },
 ];
 
 interface ParseResult {
@@ -253,6 +271,7 @@ interface ParseResult {
   chapter: number;
   verse?: number;
   endVerse?: number;
+  isDefaultVerse?: boolean;
   matchStart: number;
   matchEnd: number;
 }
@@ -279,6 +298,7 @@ function parseMatches(text: string): ParseResult[] {
       let chapter = 0;
       let verse: number | undefined;
       let endVerse: number | undefined;
+      let isDefaultVerse = false;
 
       if (groups === 'colon') {
         chapter = parseInt(match[2], 10);
@@ -288,6 +308,10 @@ function parseMatches(text: string): ParseResult[] {
         chapter = parseInt(match[2], 10);
         verse = match[3] ? parseInt(match[3], 10) : undefined;
         endVerse = match[4] ? parseInt(match[4], 10) : undefined;
+        if (verse === undefined) {
+          verse = 1;
+          isDefaultVerse = true;
+        }
       } else if (groups === 'space') {
         chapter = parseInt(match[2], 10);
         verse = parseInt(match[3], 10);
@@ -299,13 +323,25 @@ function parseMatches(text: string): ParseResult[] {
         if (!split) continue;
         chapter = split.chapter;
         verse = split.verse;
+      } else if (groups === 'chapterOnly') {
+        chapter = parseInt(match[2], 10);
+        verse = 1;
+        isDefaultVerse = true;
       }
 
-      if (!chapter || chapter > 150) continue;
-      if (verse === undefined) continue; // Require a verse number to prevent accidental chapter-level projections
+      if (!chapter || chapter < 1) continue;
+      const bookName = resolveBook(bookRaw);
+      if (!bookName) continue;
+      const maxChapters = BOOK_CHAPTER_COUNTS[bookName] ?? 150;
+      if (chapter > maxChapters) continue;
+
+      if (verse === undefined) {
+        verse = 1;
+        isDefaultVerse = true;
+      }
       if (verse < 1 || verse > 176) continue;
 
-      results.push({ bookRaw, chapter, verse, endVerse, matchStart: start, matchEnd: end });
+      results.push({ bookRaw, chapter, verse, endVerse, isDefaultVerse, matchStart: start, matchEnd: end });
       coveredRanges.push([start, end]);
     }
   }
@@ -332,7 +368,7 @@ export function detectScriptureReferencesOffline(text: string): ExtractedReferen
   const matches = parseMatches(normalized);
 
   const seen = new Set<string>();
-  const refs: ExtractedReference[] = [];
+  const rawRefs: (ExtractedReference & { isDefaultVerse?: boolean })[] = [];
 
   for (const m of matches) {
     const book = resolveBook(m.bookRaw);
@@ -342,20 +378,37 @@ export function detectScriptureReferencesOffline(text: string): ExtractedReferen
     if (seen.has(key)) continue;
     seen.add(key);
 
-    refs.push({
+    rawRefs.push({
       book,
       chapter: m.chapter,
       verse: m.verse,
       endVerse: m.endVerse,
+      isDefaultVerse: m.isDefaultVerse,
     });
   }
+
+  // If both a chapter-only (default verse 1) reference and an explicit verse reference
+  // exist for the same book and chapter in this text, let the explicit verse supersede.
+  // (e.g. "Genesis chapter 6 ... verse 5" -> only keep Genesis 6:5, not Genesis 6:1)
+  const explicitKeys = new Set(
+    rawRefs
+      .filter(r => !r.isDefaultVerse)
+      .map(r => `${r.book}|${r.chapter}`)
+  );
+
+  const refs = rawRefs.filter(r => {
+    if (r.isDefaultVerse && explicitKeys.has(`${r.book}|${r.chapter}`)) {
+      return false; // Superseded by explicit verse
+    }
+    return true;
+  });
 
   return refs;
 }
 
 /**
  * Format scripture references in transcript text into clean standard citations.
- * (e.g., "Genesis chapter 1 verse 1" -> "Genesis 1:1")
+ * (e.g., "Genesis chapter 1 verse 1" -> "Genesis 1:1", "Genesis chapter 6" -> "Genesis 6")
  */
 export function formatScripturesInText(text: string): string {
   if (!text.trim()) return text;
@@ -374,10 +427,11 @@ export function formatScripturesInText(text: string): string {
     const book = resolveBook(m.bookRaw);
     if (!book) continue;
 
-    const formattedRef = `${book} ${m.chapter}:${m.verse}${m.endVerse ? '-' + m.endVerse : ''}`;
+    const formattedRef = m.isDefaultVerse
+      ? `${book} ${m.chapter}`
+      : `${book} ${m.chapter}:${m.verse}${m.endVerse ? '-' + m.endVerse : ''}`;
     result = result.substring(0, m.matchStart) + formattedRef + result.substring(m.matchEnd);
   }
 
   return result;
 }
-

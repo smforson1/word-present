@@ -6,6 +6,7 @@ export interface ExtractedReference {
   verse?: number;
   endVerse?: number;
   reason?: string;
+  isDefaultVerse?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,7 +187,7 @@ Strict Rules:
 2. If no scripture reference or clear paraphrase is detected, return: []
 3. Ignore casual conversational speech. Only extract clear paraphrases or quotes of scripture.
 4. Numbered books: "1 Corinthians", "2 Timothy", "1 John" — always include the number prefix.
-5. Never extract or assume a verse number if it was not explicitly spoken or clearly paraphrased in the text (e.g. do not extract book-only or chapter-only references unless they contain a clear paraphrase of a specific verse).`;
+5. If the speaker mentions a Bible book and chapter without a specific verse (e.g. "Genesis chapter 6"), extract it with "verse": 1. Never extract book-only citations without a chapter number.`;
 
 export async function detectScriptureReferences(apiKey: string, transcriptText: string): Promise<ExtractedReference[]> {
   if (!apiKey || !transcriptText.trim()) return [];

@@ -148,8 +148,6 @@ let pin = Math.floor(1000 + Math.random() * 9000).toString();
 let activeScripture: { reference: string; text: string; translation: string } | null = null;
 let lastProjectedRef = '';
 let lastProjectedTime = 0;
-let activeTunnelUrl = '';
-let activeTunnel: any = null;
 
 // Resolve Local IP
 function getLocalIpAddress() {
@@ -464,30 +462,6 @@ function startNetworkServer() {
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on http://${getLocalIpAddress()}:${PORT}`);
-    
-    // Start localtunnel for public URL sharing
-    try {
-      const localtunnel = require('localtunnel');
-      localtunnel({ port: PORT }).then((tunnel: any) => {
-        activeTunnel = tunnel;
-        activeTunnelUrl = tunnel.url;
-        console.log(`Localtunnel active: ${activeTunnelUrl}`);
-        
-        // Notify open windows/consoles
-        broadcastSync('sync:status', { tunnelUrl: activeTunnelUrl });
-        
-        tunnel.on('close', () => {
-          console.log('Localtunnel tunnel closed');
-          activeTunnel = null;
-          activeTunnelUrl = '';
-          broadcastSync('sync:status', { tunnelUrl: '' });
-        });
-      }).catch((err: any) => {
-        console.error('[Localtunnel] Error establishing tunnel:', err);
-      });
-    } catch (err) {
-      console.error('[Localtunnel] Failed to load localtunnel module:', err);
-    }
   });
 }
 
@@ -1227,7 +1201,7 @@ ${scriptures.length > 0
 
   // Send local details for QR configuration
   ipcMain.handle('settings:get-network', () => {
-    return { ip: getLocalIpAddress(), port: PORT, pin, tunnelUrl: activeTunnelUrl };
+    return { ip: getLocalIpAddress(), port: PORT, pin };
   });
 
   // Let the renderer know if an API key is available via env (without exposing the key itself)
@@ -1274,8 +1248,5 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (activeTunnel) {
-    try { activeTunnel.close(); } catch { /* ignore */ }
-  }
   if (process.platform !== 'darwin') app.quit();
 });
